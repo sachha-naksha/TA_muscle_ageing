@@ -6,3 +6,4 @@ py_scripts/preproc/lightning_logs
 bash_scripts/*.log
 py_scripts/slide_analysis/tutorial_outputs
 py_scripts/slide_analysis/meta_cell_outputs
+py_scripts/slide_analysis/figures
