@@ -1,6 +1,6 @@
 x_path: /ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/male_fast2b_2x_harmonyv2_X.csv
 y_path: /ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/male_fast2b_2x_harmonyv2_Y.csv
-out_path: /ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/male
+out_path: /ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/male_0.2_spec
 delta:
   - 0.01
   - 0.1
