@@ -10,14 +10,14 @@ library(yaml)
 devtools::install_github("jishnu-lab/SLIDE")
 
 
-yaml_path = "/ix/djishnu/Akanksha/analysis_code/snRNA_TA_muscle_analysis/TA_muscle_code/R_scripts/config.yaml"
+yaml_path = "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/yaml_params.yaml"
 input_params <- yaml::yaml.load_file(yaml_path)
 SLIDE::checkDataParams(input_params)
 
-SLIDE::optimizeSLIDE(input_params, sink_file = FALSE)
+# SLIDE::optimizeSLIDE(input_params, sink_file = FALSE)
 
-SLIDE::plotCorrelationNetworks(input_params)
+# SLIDE::plotCorrelationNetworks(input_params)
 
 # Run full CV after selecting delta and lambda
 
-# SLIDE::SLIDEcv(yaml_path, nrep = 2000, k = 20)
+SLIDE::SLIDEcv(yaml_path, nrep = 2000, k = 20)

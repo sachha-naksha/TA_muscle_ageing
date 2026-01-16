@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=slide_r
-#SBATCH --output=male_0.2_spec.log
-#SBATCH --time=6:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --job-name=female_slide_cv
+#SBATCH --output=female_cv.log
+#SBATCH --time=4-00:00:00
+#SBATCH --ntasks=1
+#SBATCH --mem=64G
 
 set -euo pipefail
 
