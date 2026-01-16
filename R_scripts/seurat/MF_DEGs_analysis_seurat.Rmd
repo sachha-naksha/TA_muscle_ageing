@@ -41,8 +41,8 @@ sample_names_male <- c('M2_WT', 'M6_WT', 'M11_WT', 'M4_KO', 'M764_KO', 'M784_KO'
 ``` {r H5ad to Rds}
 Sys.setenv(HDF5_PLUGIN_PATH = "")
 # Read h5ad files back into Seurat objects
-female_h5ad <- MuDataSeurat::ReadH5AD("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/objects/female_98_80_dense.h5ad")
-male_h5ad <- MuDataSeurat::ReadH5AD("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/objects/male_98_85_dense.h5ad")
+female_h5ad <- MuDataSeurat::ReadH5AD("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/objects/female_jan_26_dense.h5ad")
+male_h5ad <- MuDataSeurat::ReadH5AD("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/objects/male_jan_26_dense.h5ad")
 # Save as RDS files
 saveRDS(female_h5ad, file.path(out_path, "female_integrated.rds"))
 saveRDS(male_h5ad, file.path(out_path, "male_integrated.rds"))
