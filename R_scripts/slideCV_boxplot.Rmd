@@ -1,17 +1,19 @@
 ##################################################################
      ##  CV Boxplot to show the SLIDE model performance ##
 ##################################################################
-
+```{r setup, include=FALSE}
 library(ggplot2)
+```
 
+```{r load data}
 # Define the path to the folders containing the .rds files
-base_path <- ".../slidecv"  # Replace with the path to your directories
+base_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/SLIDE_CV_replicate_data"  # Replace with the path to your directories
 folders <- list.dirs(base_path, recursive = FALSE)
 
 # Initialize an empty data frame to store the AUC values
 auc_data <- data.frame(Method = character(), AUC = numeric(), stringsAsFactors = FALSE)
 # Set a path to save the boxplot
-pdf(".../slidecv/SLIDECV_Boxplot.pdf", height = 5, width = 5)
+pdf("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/SLIDE_CV_replicate_data/SLIDECV_Boxplot.pdf", height = 5, width = 5)
 
 # Loop through each replicate folder
 for (folder in folders) {
@@ -23,7 +25,7 @@ for (folder in folders) {
     # Load the .rds file
     result <- readRDS(file)
     
-    # Extract AUC values for SLIDE and SLIDE_y
+    # Extract AUC values for SLIDE and SLIDE_ys
     slide_auc <- result[["final_corr"]][result[["final_corr"]]$method == "SLIDE", "auc"]
     slide_y_auc <- result[["final_corr"]][result[["final_corr"]]$method == "SLIDE_y", "auc"]
     
@@ -32,8 +34,11 @@ for (folder in folders) {
     auc_data <- rbind(auc_data, data.frame(Method = "Permutation", AUC = slide_y_auc))
   }
 }
+```
 
-ggplot(auc_data, aes(x = Method, y = AUC, fill = Method)) +
+``` {r plot}
+# Create the plot and store it
+p <- ggplot(auc_data, aes(x = Method, y = AUC, fill = Method)) +
   geom_boxplot() +
   theme_minimal() +
   labs(title = "",
@@ -41,8 +46,15 @@ ggplot(auc_data, aes(x = Method, y = AUC, fill = Method)) +
        y = "AUC") +
   scale_fill_manual(values = c("Actual" = "#007FFF", "Permutation" = "skyblue")) +
   theme(panel.grid = element_blank(), 
-        axis.line.y = element_line(color = "black"), # Add border line on y-axis
+        axis.line.y = element_line(color = "black"),
         axis.ticks.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black"), # Add border line on y-axis
+        axis.line.x = element_line(color = "black"),
         axis.ticks.x = element_line(color = "black"))
-dev.off()
+
+# Display it in RStudio
+print(p)
+
+# Save to PDF
+ggsave("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/SLIDE_CV_replicate_data/SLIDECV_Boxplot.pdf", 
+       plot = p, height = 5, width = 5)
+```
