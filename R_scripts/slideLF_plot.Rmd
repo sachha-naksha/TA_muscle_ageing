@@ -9,11 +9,11 @@ library(dplyr)
 
 ```{r load data}
 # Path to X and Y (The ones you have run SLIDE on)
-x_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/male_fast2b_2x_harmonyv2_X.csv"
-y_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/male_fast2b_2x_harmonyv2_Y.csv"
+x_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/female_fast2b_2x_harmonyv2_X.csv"
+y_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/female_fast2b_2x_harmonyv2_Y.csv"
 
 # Update this with the correct path: this path contains the best SLIDE results (Z matrix and SLIDE_LFs.rds)
-out_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/male_0.2_spec/0.1_0.1_out/"  
+out_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/"  
 
 X <- read.csv(x_path, row.names = 1, header = TRUE)
 Y <- read.csv(y_path, row.names = 1, header = TRUE)
