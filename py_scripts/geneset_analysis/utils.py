@@ -13,6 +13,8 @@ import scanpy as sc
 from pathlib import Path
 from itertools import chain, repeat
 
+##### DEG ANALYSIS UTILS #####
+
 def perform_deg_analysis(adata_subset, output_dir, layer='log1p_norm_cb', condition_column='condition', reference='WT', comparison='KO', 
                         sex_label=''):
     """
@@ -82,6 +84,27 @@ def perform_deg_analysis(adata_subset, output_dir, layer='log1p_norm_cb', condit
     print(f"Significantly downregulated genes (padj < 0.05, |log2FC| > 0.5): {(result_df['significant'] & (result_df['log2FC'] < 0)).sum()}")
     
     return adata_filtered, result_df
+
+# filter the degs using thresholds
+def filter_degs(degs, log2fc_thresh=0.05, pval_thresh=0.01):
+    filtered_degs = degs[(degs['logfoldchanges'].abs() > log2fc_thresh) & (degs['pvals_adj'] < pval_thresh)]
+    # sort the rows by absolute logfoldchanges
+    filtered_degs = filtered_degs.sort_values(by='logfoldchanges', key=lambda x: x.abs(), ascending=False)
+    return filtered_degs
+
+def get_common_degs(degs_males, degs_females):
+    # get the names of the common DEGs between sexes (just names column)
+    common_deg_names = degs_males[degs_males['names'].isin(degs_females['names'])]['names'].unique()
+    # slice the rows of the common degs df from the males df
+    common_deg_df_male = degs_males[degs_males['names'].isin(common_deg_names)]
+    common_deg_df_female = degs_females[degs_females['names'].isin(common_deg_names)]
+    common_degs = pd.merge(common_deg_df_male, common_deg_df_female, on='names', how='inner', suffixes=('_male', '_female'))
+    return common_degs
+
+def get_opposite_sign_degs(common_degs):
+    # get the degs that have opposite signs in common male and female degs
+    opposite_sign_degs = common_degs[common_degs['logfoldchanges_male'] * common_degs['logfoldchanges_female'] < 0]
+    return opposite_sign_degs
 
 def visualize_deg_results(result_df, sex_label, output_dir):
     """
@@ -327,6 +350,8 @@ def save_deg_results(result_df, sex_label, output_dir):
     
     return sig_results
 
+##### GSEA ANALYSIS UTILS #####
+
 def create_ranked_genelist(deg_df, log2fc_col='avg_log2FC', pval_col='p_val_adj', gene_col='gene_name', min_pval=1e-300):
     """
     Create a ranked gene list based on signed log2FC * -log10(adjusted p-value)
@@ -402,6 +427,18 @@ def gmt_to_decoupler(pth: Path) -> pd.DataFrame:
         columns=["geneset", "genesymbol"],
     )
 
+def gmt_to_decoupler_multiple_pathways(gmt_paths, geneset_name=None, genesymbol_name=None):
+    """Parse multiple gmt files and return a combined decoupler pathway dataframe."""
+    all_records = []
+    for pth in gmt_paths:
+        with Path(pth).open("r") as f:
+            for line in f:
+                name, _, *genes = line.strip().split("\t")
+                all_records.extend(zip(repeat(name), genes))
+    return pd.DataFrame.from_records(all_records, columns=[geneset_name, genesymbol_name])
+    
+##### CELL TYPE ANALYSIS UTILS #####
+
 # Calculate percentages for each condition
 def get_cell_type_percentages(adata, cell_type_label='cell_type'):
     wt_cells = adata[adata.obs['condition'] == 'WT'].obs[cell_type_label].value_counts(normalize=True) * 100
@@ -427,6 +464,8 @@ def get_cell_type_percentages_by_sex(adata, cell_type_label='cell_type'):
         'ΔERCC1 KO M%': ko_male.values.round(2)
     })
     return df
+
+##### SCORE ANALYSIS UTILS #####
 
 def calculate_sc_score(data, up_genes=None, down_genes=None, condition_col='condition'):
     """
@@ -778,12 +817,3 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None, palette=
     
     return fig
 
-def gmt_to_decoupler_multiple_pathways(gmt_paths, geneset_name=None, genesymbol_name=None):
-    """Parse multiple gmt files and return a combined decoupler pathway dataframe."""
-    all_records = []
-    for pth in gmt_paths:
-        with Path(pth).open("r") as f:
-            for line in f:
-                name, _, *genes = line.strip().split("\t")
-                all_records.extend(zip(repeat(name), genes))
-    return pd.DataFrame.from_records(all_records, columns=[geneset_name, genesymbol_name])
