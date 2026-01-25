@@ -106,6 +106,11 @@ def get_opposite_sign_degs(common_degs):
     opposite_sign_degs = common_degs[common_degs['logfoldchanges_male'] * common_degs['logfoldchanges_female'] < 0]
     return opposite_sign_degs
 
+def get_same_sign_degs(common_degs):
+    # get the degs that have same signs in common male and female degs
+    same_sign_degs = common_degs[common_degs['logfoldchanges_male'] * common_degs['logfoldchanges_female'] > 0]
+    return same_sign_degs
+
 def visualize_deg_results(result_df, sex_label, output_dir):
     """
     Create comprehensive visualizations for DEG results
