@@ -172,13 +172,3 @@ def fetch_GRN_data(oracle_object_name, GRN_wd):
         # GRN_TFs = GRN_TFs + list(links_after_fit[cluster].source.unique())
     return GRN_links_after_fit, GRN_network_scores, GRN_TFs
 
-def read_slide_data(experiment, wd):
-    # Read SLIDE data for the experiment
-    feature_files = glob.glob(f"{wd}/out_data/out_other_methods/SLIDE_Runs/{experiment}/*/*feature_list*")
-    if experiment == 'IRF4_KO':
-        feature_data = [pd.read_csv(file, sep='\t', header=0) for file in feature_files if 'Z4' in file or 'Z36' in file]
-    else:
-        feature_data = [pd.read_csv(file, sep='\t', header = 0) for file in feature_files]
-    feature_data = pd.concat(feature_data)
-    slide_features = set(feature_data['names'])
-    return slide_features
