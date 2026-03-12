@@ -357,6 +357,26 @@ def save_deg_results(result_df, sex_label, output_dir):
 
 ##### GSEA ANALYSIS UTILS #####
 
+def convert_genes(gene_list, direction='human_to_mouse'):
+    """
+    Convert gene symbols between human and mouse formats.
+    """
+    direction = direction.lower()
+    
+    if direction in ['human_to_mouse', 'h2m']:
+        # Human to mouse: capitalize (first letter uppercase, rest lowercase)
+        return [gene.capitalize() for gene in gene_list]
+    
+    elif direction in ['mouse_to_human', 'm2h']:
+        # Mouse to human: all uppercase
+        return [gene.upper() for gene in gene_list]
+    
+    else:
+        raise ValueError(
+            f"Invalid direction: {direction}. "
+            "Use 'human_to_mouse'/'h2m' or 'mouse_to_human'/'m2h'"
+        )
+        
 def create_ranked_genelist(deg_df, log2fc_col='avg_log2FC', pval_col='p_val_adj', gene_col='gene_name', min_pval=1e-300):
     """
     Create a ranked gene list based on signed log2FC * -log10(adjusted p-value)
