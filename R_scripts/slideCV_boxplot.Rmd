@@ -7,13 +7,13 @@ library(ggplot2)
 
 ```{r load data}
 # Define the path to the folders containing the .rds files
-base_path <- "/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/SLIDE_CV_replicate_data"  # Replace with the path to your directories
+base_path <- "/ocean/projects/cis240075p/asachan/datasets/TA_muscle/ERCC1_KO_mice/integrated_samples/slide_outs/optimize_slide/male_0.2_spec/0.1_0.1_out/SLIDE_CV_replicate_data"  # Replace with the path to your directories
 folders <- list.dirs(base_path, recursive = FALSE)
 
 # Initialize an empty data frame to store the AUC values
 auc_data <- data.frame(Method = character(), AUC = numeric(), stringsAsFactors = FALSE)
 # Set a path to save the boxplot
-pdf("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/SLIDE_CV_replicate_data/SLIDECV_Boxplot.pdf", height = 5, width = 5)
+pdf("/ocean/projects/cis240075p/asachan/datasets/TA_muscle/ERCC1_KO_mice/integrated_samples/slide_outs/optimize_slide/male_0.2_spec/0.1_0.1_out/SLIDE_CV_replicate_data/SLIDECV_Boxplot_males.pdf", height = 5, width = 5)
 
 # Loop through each replicate folder
 for (folder in folders) {
@@ -55,6 +55,6 @@ p <- ggplot(auc_data, aes(x = Method, y = AUC, fill = Method)) +
 print(p)
 
 # Save to PDF
-ggsave("/ix/djishnu/Akanksha/datasets/ERCC1_KO_mice/metacell/slide_outs/optimize_slide/female_0.2_spec/0.01_0.5_out/SLIDE_CV_replicate_data/SLIDECV_Boxplot.pdf", 
+ggsave("/ocean/projects/cis240075p/asachan/datasets/TA_muscle/ERCC1_KO_mice/integrated_samples/slide_outs/optimize_slide/male_0.2_spec/0.1_0.1_out/SLIDE_CV_replicate_data/SLIDECV_Boxplot_males.pdf", 
        plot = p, height = 5, width = 5)
 ```
