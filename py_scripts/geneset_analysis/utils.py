@@ -494,7 +494,7 @@ def get_cell_type_percentages_by_sex(adata, cell_type_label='cell_type'):
 
 def calculate_sc_score(data, up_genes=None, down_genes=None, condition_col='condition'):
     """
-    Calculate geneset signature scores for each sample based on gene-sets with directionality
+    Calculate geneset signature scores for each sample/single-cell based on gene-sets with directionality
     
     Parameters:
     -----------
@@ -601,7 +601,7 @@ def calculate_sc_score(data, up_genes=None, down_genes=None, condition_col='cond
     scores = (scores - scores.mean()) / scores.std()
     
     # Convert to DataFrame with meaningful column name
-    scores_df = pd.DataFrame(scores, columns=["senescence_score"])
+    scores_df = pd.DataFrame(scores, columns=["geneset_score"])
     
     # Add condition column if available
     if condition_info is not None:
@@ -637,174 +637,173 @@ def calculate_pairwise_significance(data, groups, x_var, y_var):
             results[(i, j)] = {'p-value': pvalue, 'significance': sig}
     
     return results
-    
-def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None, palette=None, rotation=45, show_scatter=True):
+
+def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
+                          palette=None, rotation=45, show_scatter=True,
+                          figsize=(5, 6), scatter_size=4, scatter_alpha=0.6,
+                          violin_width=0.7, box_width=0.35, jitter=0.15,
+                          show_pvalue=True):
     """
-    Create a combined violin-box plot with optional scatter points
-    
-    Parameters:
-    -----------
-    show_scatter : bool, default=True
-        If True, shows individual data points as scatter. If False, shows only violin and box.
+    Create a combined violin-box plot with optional scatter points.
+
+    Parameters
+    ----------
+    show_scatter : bool, default True
+        Overlay individual data points as a strip plot.
+    figsize : tuple, default (5, 6)
+        Figure dimensions in inches.
+    scatter_size : float, default 4
+        Marker size for scatter points.
+    scatter_alpha : float, default 0.6
+        Marker transparency (0–1).
+    violin_width : float, default 0.7
+        Width of the violin bodies.
+    box_width : float, default 0.35
+        Width of the box plots.
+    jitter : float, default 0.15
+        Horizontal jitter for scatter points.
+    show_pvalue : bool, default True
+        If True, display the numerical p-value alongside significance symbols.
+        If False, show only the asterisk symbols (*, **, ***).
     """
     plt.clf()
-    fig, ax = plt.subplots(figsize=(5, 6))
-    
-    plt.subplots_adjust(left=0.15, right=0.85, bottom=0.1, top=0.9)
+    fig, ax = plt.subplots(figsize=figsize)
+    plt.subplots_adjust(left=0.15, right=0.85, bottom=0.12, top=0.88)
 
-    # Calculate y-axis limits based on data
-    y_min = data[y_var].min()
-    y_max = data[y_var].max()
+    # ── y-axis limits ──────────────────────────────────────────────
+    y_min, y_max = data[y_var].min(), data[y_var].max()
     y_range = y_max - y_min
-    
-    # Add padding proportional to the data range (10% on each side)
-    padding = y_range * 0.1
+    padding = y_range * 0.10
     y_min_plot = y_min - padding
     y_max_plot = y_max + padding
-    
-    # Only use floor/ceil if the range is large enough
+
     if y_range > 1.0:
-        y_min_plot = np.floor(y_min_plot * 2) / 2
-        y_max_plot = np.ceil(y_max_plot * 2) / 2
+        y_min_plot = np.floor(y_min_plot)
+        y_max_plot = np.ceil(y_max_plot)
     else:
         y_min_plot = max(0, y_min_plot)
-    
-    # Set initial y-axis limits
+
     ax.set_ylim(y_min_plot, y_max_plot)
-    
-    # Set appropriate tick intervals based on data range
+
+    # ── smart tick interval based on range ─────────────────────────
     if y_range < 0.1:
         tick_interval = 0.02
     elif y_range < 0.5:
         tick_interval = 0.05
     elif y_range < 2.0:
-        tick_interval = 0.1
-    else:
+        tick_interval = 0.25
+    elif y_range < 5.0:
         tick_interval = 0.5
-    
+    elif y_range < 15.0:
+        tick_interval = 2.0
+    elif y_range < 30.0:
+        tick_interval = 5.0
+    else:
+        tick_interval = 10.0
+
     ax.yaxis.set_major_locator(plt.MultipleLocator(tick_interval))
 
-    # Determine order
+    # ── category order ─────────────────────────────────────────────
     if x_ticks is not None:
         categories = x_ticks
     else:
-        categories = sorted(data[x_var].unique(), key=lambda x: float(x) if x.replace('.','').isdigit() else x)
+        categories = sorted(
+            data[x_var].unique(),
+            key=lambda x: float(x) if str(x).replace('.', '').isdigit() else x,
+        )
 
-    # Create violin plot with explicit order
-    violin = sns.violinplot(
+    # ── violin plot ────────────────────────────────────────────────
+    sns.violinplot(
         data=data, x=x_var, y=y_var,
-        order=categories,
-        palette=palette, inner=None,
-        linewidth=0, saturation=1.0,
-        alpha=0.3, width=0.4, cut=0
+        order=categories, palette=palette,
+        inner=None, linewidth=0, saturation=1.0,
+        alpha=0.45, width=violin_width, cut=0, ax=ax,
     )
 
-    # Create box plot with explicit order
-    box_plot = sns.boxplot(
+    # ── box plot (skeleton only – we colour it below) ──────────────
+    sns.boxplot(
         data=data, x=x_var, y=y_var,
-        order=categories,
-        width=0.4, linewidth=1.2,
-        flierprops={'marker': ' '},
-        showmeans=False,
-        boxprops={
-            'facecolor': 'none',
-            'edgecolor': 'none'
-        },
+        order=categories, width=box_width, linewidth=1.2,
+        flierprops={'marker': ' '}, showmeans=False,
+        boxprops={'facecolor': 'none', 'edgecolor': 'none'},
         whiskerprops={'color': 'none'},
         medianprops={'color': 'none'},
-        showcaps=False,
-        ax=ax
+        showcaps=False, ax=ax,
     )
 
-    # Count number of boxes and lines per box
-    num_boxes = len(categories)
-    lines_per_box = len(ax.lines) // num_boxes
+    # ── colour boxes per category ──────────────────────────────────
+    import matplotlib.patches as mpatches
 
-    # Update box plot colors after creation
+    num_boxes = len(categories)
+    lines_per_box = len(ax.lines) // num_boxes if num_boxes else 0
+
     for i, (name, box) in enumerate(zip(categories, ax.patches)):
         color = palette[name]
-        
-        # Create filled box with transparency
+
         box.set_facecolor(color)
         box.set_edgecolor('none')
-        box.set_alpha(0.3)
+        box.set_alpha(0.45)
         box.set_zorder(1)
-        
-        # Create box edges with full opacity
-        import matplotlib.patches as mpatches
-        path = box.get_path()
+
         edges = mpatches.PathPatch(
-            path,
-            facecolor='none',
-            edgecolor=color,
-            linewidth=1.2,
-            alpha=1.0,
-            zorder=2
+            box.get_path(), facecolor='none',
+            edgecolor=color, linewidth=1.2, alpha=1.0, zorder=2,
         )
         ax.add_patch(edges)
-        
-        # Get and color all lines for this box
-        box_lines = ax.lines[i * lines_per_box : (i + 1) * lines_per_box]
-        for line in box_lines:
+
+        for line in ax.lines[i * lines_per_box:(i + 1) * lines_per_box]:
             line.set_color(color)
             line.set_alpha(1.0)
             line.set_linewidth(1.2)
             line.set_zorder(2)
 
-    # ========== CONDITIONAL SCATTER POINTS ==========
+    # ── scatter overlay ────────────────────────────────────────────
     if show_scatter:
-        # Add individual points on top with explicit order
         sns.stripplot(
             data=data, x=x_var, y=y_var,
-            order=categories,
-            palette=palette, size=6,
-            alpha=1.0, linewidth=0,
-            jitter=0.2, zorder=3
+            order=categories, palette=palette,
+            size=scatter_size, alpha=scatter_alpha,
+            linewidth=0, jitter=jitter, zorder=3, ax=ax,
         )
-    # ================================================
-    
-    # Calculate significance using the ordered categories
-    significance_info = calculate_pairwise_significance(data, categories, x_var, y_var)
 
-    # Get current y limits before adding bars
+    # ── significance bars ──────────────────────────────────────────
+    significance_info = calculate_pairwise_significance(
+        data, categories, x_var, y_var,
+    )
+
     current_ymin, current_ymax = ax.get_ylim()
     y_range_plot = current_ymax - current_ymin
-    
-    # Make bar spacing relative to the data range
     bar_spacing = y_range_plot * 0.08
     bar_tips = y_range_plot * 0.02
     bar_height = current_ymax + bar_spacing * 0.5
 
-    # Add significance bar function
     def add_significance_bar(start, end, height, p_value, sig_symbol):
-        # Draw the bar
-        ax.plot([start, start, end, end], 
-                [height, height + bar_tips, height + bar_tips, height],
-                color='black', linewidth=0.8)
-        
-        # If p-value rounds to 0.0000 (very small), show only asterisks
-        if p_value < 0.00005:  # This rounds to 0.0000 with 4 decimals
-            text = sig_symbol  # Just "***"
+        ax.plot(
+            [start, start, end, end],
+            [height, height + bar_tips, height + bar_tips, height],
+            color='black', linewidth=0.8,
+        )
+        if not show_pvalue:
+            text = sig_symbol
+        elif p_value < 0.00005:
+            text = f'p = {p_value:.2e} {sig_symbol}'
         else:
-            text = f'p = {p_value:.4f} {sig_symbol}'  # "p = 0.0123 **"
-        ax.text((start + end) * 0.5, height + bar_tips, 
-                text, ha='center', va='bottom', fontsize=8)
+            text = f'p = {p_value:.4f} {sig_symbol}'
+        ax.text(
+            (start + end) * 0.5, height + bar_tips,
+            text, ha='center', va='bottom', fontsize=8,
+        )
 
-    # Add significant bars (p < 0.05 only)
-    for (group1_idx, group2_idx), sig_data in significance_info.items():
+    for (g1, g2), sig_data in significance_info.items():
         if sig_data['significance'] != 'ns':
-            add_significance_bar(
-                group1_idx, 
-                group2_idx, 
-                bar_height,
-                sig_data['p-value'],
-                sig_data['significance']
-            )
+            add_significance_bar(g1, g2, bar_height,
+                                 sig_data['p-value'],
+                                 sig_data['significance'])
             bar_height += bar_spacing
 
-    # Adjust y-axis limits to accommodate bars
     ax.set_ylim(current_ymin, bar_height + bar_spacing * 0.5)
 
+    # ── titles & labels ────────────────────────────────────────────
     if title:
         plt.title(title, pad=20)
 
@@ -814,31 +813,217 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None, palette=
     else:
         ax.set_xticks(range(len(x_ticks)))
         ax.set_xticklabels(x_ticks, rotation=rotation, ha='right')
-        plt.setp(ax.get_xticklabels(), rotation=rotation, ha='right')
         ax.spines['bottom'].set_visible(True)
 
-    # Configure ticks and spines with thinner lines
+    # ── spine / tick cosmetics ─────────────────────────────────────
     ax.minorticks_off()
-    ax.tick_params(axis='both', which='minor', bottom=False, top=False, left=False, right=False)
+    ax.tick_params(axis='both', which='minor',
+                   bottom=False, top=False, left=False, right=False)
     ax.tick_params(axis='x', which='major', top=False)
     ax.tick_params(axis='y', which='major', right=False, width=0.8)
-    
+
     ax.spines['left'].set_linewidth(0.8)
     ax.spines['right'].set_visible(False)
     ax.yaxis.set_tick_params(width=0.8)
-    
+
     plt.setp(ax.get_yticklabels(), weight='bold')
     ax.set_xlabel('')
     ax.set_ylabel('')
     ax.yaxis.grid(False)
-    
-    sns.despine(offset=5, trim=True, bottom=(x_ticks is None), right=True)
-    
-    # Force rotation of x-tick labels
+
+    sns.despine(offset=5, trim=True,
+                bottom=(x_ticks is None), right=True)
+
     if x_ticks is not None:
         plt.setp(ax.get_xticklabels(), rotation=rotation, ha='right')
-    
+
     plt.close()
-    
     return fig
 
+def plot_pathway_dotplot(
+    df_cell_level,
+    score_cols,  # List of pathway score column names (y-axis)
+    sample_col='sample',  # Column name for sample IDs (x-axis)
+    annotation_col='Annotation',
+    target_annotation=None,
+    sample_order=None,  # Optional: list of samples in desired order
+    figsize=(10, 6),
+    min_dot_size=20,
+    max_dot_size=500,
+    dot_size_scale_factor=1.0,
+    cmap_name="coolwarm",
+    value_legend_title="Mean Score",
+    size_legend_title="# Cells",
+    ylabel="Pathways",
+    xlabel="Samples"
+):
+    """
+    Plots a dot plot where dot color is mean pathway score and dot size is number of cells.
+    
+    Parameters:
+        df_cell_level (pd.DataFrame): Cell-level data with scores, sample, annotation.
+        score_cols (list): List of score column names (pathways) - will be y-axis.
+        sample_col (str): Column name for sample IDs - will be x-axis.
+        annotation_col (str): Column name for annotations.
+        target_annotation (str or None): If provided, subset to this annotation.
+        sample_order (list or None): Order of samples for x-axis. If None, uses sorted order.
+        figsize (tuple): Figure size.
+        min_dot_size (int): Minimum size for dots.
+        max_dot_size (int): Maximum size for dots.
+        dot_size_scale_factor (float): Multiplier for raw cell counts before scaling to dot size.
+        cmap_name (str): Colormap for the scores.
+        value_legend_title (str): Title for the colorbar.
+        size_legend_title (str): Title for the size legend.
+        ylabel (str): Label for y-axis (pathways).
+        xlabel (str): Label for x-axis (samples).
+    """
+    plot_df = df_cell_level.copy()
+
+    # 1. Filter by annotation if specified
+    if target_annotation is not None:
+        if annotation_col not in plot_df.columns:
+            print(f"Warning: Annotation column '{annotation_col}' not found. Cannot filter by '{target_annotation}'.")
+            return
+        plot_df = plot_df[plot_df[annotation_col] == target_annotation]
+        if plot_df.empty:
+            print(f"No cells found for annotation '{target_annotation}'.")
+            return
+
+    # Check required columns
+    required_cols = [sample_col] + score_cols
+    for col in required_cols:
+        if col not in plot_df.columns:
+            print(f"Warning: Required column '{col}' not found. Aborting.")
+            return
+
+    plot_df = plot_df.dropna(subset=[sample_col], how='any')
+    if plot_df.empty:
+        print("No data to plot after initial NaN filtering.")
+        return
+
+    # 2. Aggregate: mean scores and cell counts per sample
+    grouped = plot_df.groupby(sample_col)
+    mean_scores_df = grouped[score_cols].mean()
+    cell_counts_series = grouped.size()
+
+    # 3. Determine sample order
+    if sample_order is None:
+        ordered_samples = sorted(mean_scores_df.index.tolist())
+    else:
+        # Use provided order, but only include samples that exist in data
+        ordered_samples = [s for s in sample_order if s in mean_scores_df.index]
+        if not ordered_samples:
+            print("None of the specified samples found in data.")
+            return
+
+    # 4. Prepare data for plotting (long format)
+    plot_data_list = []
+    for sample_id in ordered_samples:
+        for pathway in score_cols:
+            mean_score = mean_scores_df.loc[sample_id, pathway] if sample_id in mean_scores_df.index else np.nan
+            cell_count = cell_counts_series.loc[sample_id] if sample_id in cell_counts_series.index else 0
+            plot_data_list.append({
+                'sample': sample_id,
+                'pathway': pathway,
+                'mean_score': mean_score,
+                'cell_count': cell_count
+            })
+    
+    plot_data_df = pd.DataFrame(plot_data_list)
+    plot_data_df = plot_data_df.dropna(subset=['mean_score'])
+
+    if plot_data_df.empty:
+        print("No data to plot after aggregation.")
+        return
+
+    # 5. Scale cell counts for dot sizes
+    min_count = plot_data_df['cell_count'].min()
+    max_count = plot_data_df['cell_count'].max()
+    
+    if max_count == min_count:
+        plot_data_df['dot_size'] = min_dot_size if max_count == 0 else (min_dot_size + max_dot_size) / 2
+    else:
+        scaled_counts = plot_data_df['cell_count'] * dot_size_scale_factor
+        min_s_count = scaled_counts.min()
+        max_s_count = scaled_counts.max()
+        
+        if max_s_count == min_s_count:
+            plot_data_df['dot_size'] = min_dot_size if max_s_count == 0 else (min_dot_size + max_dot_size) / 2
+        else:
+            plot_data_df['dot_size'] = min_dot_size + \
+                (scaled_counts - min_s_count) / (max_s_count - min_s_count) * (max_dot_size - min_dot_size)
+
+    # 6. Plotting
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Create coordinate mappings
+    pathway_y_coords = {name: i for i, name in enumerate(score_cols)}
+    sample_x_coords = {name: i for i, name in enumerate(ordered_samples)}
+
+    scatter = ax.scatter(
+        x=plot_data_df['sample'].map(sample_x_coords),
+        y=plot_data_df['pathway'].map(pathway_y_coords),
+        s=plot_data_df['dot_size'],
+        c=plot_data_df['mean_score'],
+        cmap=cmap_name,
+        edgecolors='gray',
+        linewidths=0.5
+    )
+
+    # X-axis (Samples)
+    ax.set_xticks(list(sample_x_coords.values()))
+    ax.set_xticklabels(ordered_samples, rotation=45, ha="right")
+    ax.set_xlabel(xlabel)
+
+    # Y-axis (Pathways)
+    ax.set_yticks(list(pathway_y_coords.values()))
+    ax.set_yticklabels(score_cols)
+    ax.set_ylabel(ylabel)
+
+    # Colorbar for Mean Score
+    cbar = fig.colorbar(scatter, ax=ax, fraction=0.03, pad=0.15)
+    cbar.set_label(value_legend_title)
+
+    # Legend for Dot Size (# Cells)
+    if max_count > 0:
+        legend_counts_raw = np.linspace(min_count, max_count, num=4, dtype=int)
+        if min_count == 0 and 0 not in legend_counts_raw and len(legend_counts_raw) > 1:
+            legend_counts_raw[0] = 0
+        legend_counts_raw = np.unique(legend_counts_raw)
+    else:
+        legend_counts_raw = np.array([min_count]) if min_count > 0 else np.array([0])
+
+    legend_dots = []
+    for count_val in legend_counts_raw:
+        if max_count == min_count:
+            size_val = min_dot_size if max_count == 0 else (min_dot_size + max_dot_size) / 2
+        else:
+            scaled_c = count_val * dot_size_scale_factor
+            size_val = min_dot_size + \
+                (scaled_c - (min_count * dot_size_scale_factor)) / \
+                ((max_count * dot_size_scale_factor) - (min_count * dot_size_scale_factor)) * \
+                (max_dot_size - min_dot_size)
+        size_val = max(min_dot_size, min(max_dot_size, size_val))
+        legend_dots.append(plt.scatter([], [], s=size_val, c='gray', label=f"{int(count_val)}"))
+
+    size_leg = ax.legend(
+        handles=legend_dots,
+        title=size_legend_title,
+        bbox_to_anchor=(1.18, 0.4),
+        loc='center left',
+        labelspacing=1.5,
+        borderpad=1,
+        frameon=True,
+        handletextpad=1.5,
+        scatterpoints=1
+    )
+
+    # Layout adjustments
+    fig_title = f'Pathway Activity Dot Plot (Annotation: {target_annotation})' if target_annotation else 'Pathway Activity Dot Plot'
+    plt.suptitle(fig_title, fontsize=16, y=1.02)
+    plt.subplots_adjust(bottom=0.15, right=0.8)
+    plt.grid(True, linestyle='--', alpha=0.3, axis='both')
+    ax.tick_params(axis='both', which='major', pad=7)
+
+    plt.tight_layout()
+    plt.show()
