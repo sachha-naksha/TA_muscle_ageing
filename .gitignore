@@ -7,3 +7,4 @@ bash_scripts/*.log
 py_scripts/slide_analysis/tutorial_outputs
 py_scripts/slide_analysis/meta_cell_outputs
 py_scripts/slide_analysis/figures
+py_scripts/pygenelab/__pycache__/*
