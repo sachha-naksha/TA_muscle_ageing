@@ -258,6 +258,64 @@ def get_pathway_genes(
     return genes
 
 
+# get_cell_type_percentages
+def get_cell_type_percentages(
+    adata,
+    *,
+    cell_type_col="cell_type",
+    condition_col="condition",
+    conditions=("WT", "KO"),
+    column_labels=None,
+):
+    """
+    percentage of each cell type within each condition.
+    returns a wide DataFrame: rows = cell types, columns = one per condition.
+    """
+    if column_labels is None:
+        column_labels = {c: f"{c}%" for c in conditions}
+    elif isinstance(column_labels, (list, tuple)):
+        column_labels = dict(zip(conditions, column_labels))
+
+    out = None
+    for cond in conditions:
+        pct = (
+            adata[adata.obs[condition_col] == cond]
+            .obs[cell_type_col]
+            .value_counts(normalize=True) * 100
+        ).rename(column_labels[cond])
+        out = pct.to_frame() if out is None else out.join(pct, how="outer")
+
+    return out.fillna(0).round(2).reset_index().rename(columns={"index": "Cell Type"})
+
+
+# get_cell_type_percentages_by_sex
+def get_cell_type_percentages_by_sex(
+    adata,
+    *,
+    cell_type_col="cell_type",
+    condition_col="condition",
+    sex_col="sex",
+    conditions=("WT", "KO"),
+    sexes=("F", "M"),
+):
+    """
+    percentage of each cell type within each (condition, sex) combination.
+    returns a wide DataFrame with one column per (cond, sex) pair.
+    """
+    out = None
+    for cond in conditions:
+        for sx in sexes:
+            mask = (adata.obs[condition_col] == cond) & (adata.obs[sex_col] == sx)
+            pct = (
+                adata[mask]
+                .obs[cell_type_col]
+                .value_counts(normalize=True) * 100
+            ).rename(f"{cond} {sx}%")
+            out = pct.to_frame() if out is None else out.join(pct, how="outer")
+
+    return out.fillna(0).round(2).reset_index().rename(columns={"index": "Cell Type"})
+
+
 # prepare_group_score_df
 def prepare_group_score_df(
     adata,

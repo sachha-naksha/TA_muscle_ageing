@@ -14,6 +14,23 @@ import matplotlib.pyplot as plt
 from scipy.stats import rankdata
 
 
+# convert_gene_case
+def convert_gene_case(gene_list, direction="human_to_mouse"):
+    """
+    convert gene symbols between human (UPPER) and mouse (Title) case.
+    direction: "human_to_mouse" / "h2m" or "mouse_to_human" / "m2h".
+    """
+    d = direction.lower()
+    if d in ("human_to_mouse", "h2m"):
+        return [str(g).capitalize() for g in gene_list]
+    if d in ("mouse_to_human", "m2h"):
+        return [str(g).upper() for g in gene_list]
+    raise ValueError(
+        f"invalid direction: {direction}. "
+        "use 'human_to_mouse'/'h2m' or 'mouse_to_human'/'m2h'"
+    )
+
+
 # convert_gmt_to_decoupler_format
 def convert_gmt_to_decoupler_format(
     pth: Path,
