@@ -122,6 +122,7 @@ def plot_gene_contribution_heatmap(
     ax.set_ylabel("Gene")
 
     plt.tight_layout()
+    plt.close(fig)
 
     # return dataframe and plot objects
     return heatmap_df, fig, ax
@@ -132,7 +133,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
                           palette=None, rotation=45, show_scatter=True,
                           figsize=(5, 6), scatter_size=4, scatter_alpha=0.6,
                           violin_width=0.7, box_width=0.35, jitter=0.15,
-                          show_pvalue=True):
+                          show_pvalue=True, delta_label=None):
     """
     Create a combined violin-box plot with optional scatter points.
 
@@ -155,6 +156,9 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
     show_pvalue : bool, default True
         If True, display the numerical p-value alongside significance symbols.
         If False, show only the asterisk symbols (*, **, ***).
+    delta_label : str or None, default None
+        If given, annotate the plot with this string (e.g. "Cliff's δ = 0.42")
+        in the top-left of the axes.
     """
     plt.clf()
     fig, ax = plt.subplots(figsize=figsize)
@@ -296,6 +300,16 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
     # ── titles & labels ────────────────────────────────────────────
     if title:
         plt.title(title, pad=20)
+
+    if delta_label:
+        ax.text(
+            0.02, 0.98, delta_label,
+            transform=ax.transAxes, ha='left', va='top',
+            fontsize=9, fontweight='bold',
+            bbox=dict(facecolor='white', edgecolor='lightgray',
+                      boxstyle='round,pad=0.3', alpha=0.85),
+            zorder=10,
+        )
 
     if x_ticks is None:
         ax.set_xticks([])

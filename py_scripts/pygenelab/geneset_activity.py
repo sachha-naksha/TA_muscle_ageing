@@ -262,6 +262,7 @@ def plot_score_by_group(
     show_scatter=True,
     figsize=(5, 6),
     show_pvalue=True,
+    delta_label=None,
 ):
     """
     plot one pathway score across groups using the canonical violin-box combo.
@@ -283,6 +284,7 @@ def plot_score_by_group(
         show_scatter=show_scatter,
         figsize=figsize,
         show_pvalue=show_pvalue,
+        delta_label=delta_label,
     )
     return plot_df, fig
 
