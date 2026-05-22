@@ -12,3 +12,4 @@ from .plotting import *
 from .utils import *
 from .geneset_activity import *
 from .deg_functional_enrichment import *
+from .transcriptional_noise import *

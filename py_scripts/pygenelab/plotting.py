@@ -1569,3 +1569,108 @@ def display_plots_side_by_side(figures, width=400, save_path=None):
 
         combined.save(save_path)
 
+
+# plot_transcriptional_noise
+def plot_transcriptional_noise(
+    noise_all_df,
+    celltype_col="celltype",
+    condition_col="condition",
+    noise_col="noise",
+    celltype_order=None,
+    group_order=("WT", "KO"),
+    figsize=(14, 5),
+    title="WT vs KO Transcriptional Noise",
+    bar_width=0.5,
+    bar_step=0.6
+):
+    """
+    plot transcriptional noise boxplot
+    """
+
+    # plot_transcriptional_noise
+    # api:
+    # fig, ax = plot_transcriptional_noise(
+    #     noise_all_df=noise_all_df,
+    #     celltype_col="celltype",
+    #     condition_col="condition",
+    #     noise_col="noise",
+    # )
+
+    if celltype_order is None:
+        celltype_order = noise_all_df[celltype_col].dropna().unique().tolist()
+
+    plot_data = [
+        noise_all_df[
+            (noise_all_df[celltype_col] == celltype) &
+            (noise_all_df[condition_col] == group)
+        ][noise_col].dropna().values
+        for celltype in celltype_order
+        for group in group_order
+    ]
+
+    # uniform spacing: every adjacent bar is bar_step apart (no extra gap between celltype pairs)
+    n_groups = len(group_order)
+    positions = []
+    labels = []
+
+    pos = 1.0
+    for celltype in celltype_order:
+        positions.extend([pos + i * bar_step for i in range(n_groups)])
+        labels.append(celltype)
+        pos += n_groups * bar_step
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    bp = ax.boxplot(
+        plot_data,
+        positions=positions,
+        widths=bar_width,
+        patch_artist=True,
+        showfliers=False
+    )
+
+    colors = {
+        group_order[0]: "#50BA47",
+        group_order[1]: "#A15DBA"
+    }
+
+    for i, box in enumerate(bp["boxes"]):
+        group = group_order[i % len(group_order)]
+        box.set_facecolor(colors[group])
+        box.set_alpha(0.8)
+
+    # set x-axis labels at the center of each celltype's group
+    tick_positions = [
+        np.mean(positions[i:i + n_groups])
+        for i in range(0, len(positions), n_groups)
+    ]
+
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(celltype_order, rotation=90)
+
+    ax.set_ylabel("Transcriptional noise")
+    ax.set_xlabel("Cell type")
+    ax.set_title(title)
+
+    # add legend
+    legend_handles = [
+        plt.Line2D(
+            [0],
+            [0],
+            color=colors[group],
+            lw=8,
+            label=group
+        )
+        for group in group_order
+    ]
+
+    ax.legend(
+        handles=legend_handles,
+        title=condition_col,
+        frameon=False
+    )
+
+    plt.tight_layout()
+
+    return fig, ax
+

@@ -8,8 +8,9 @@ all utility functions
 from pathlib import Path
 from itertools import chain, repeat
 
+import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import sparse, stats
 import matplotlib.pyplot as plt
 from scipy.stats import rankdata
 
@@ -467,3 +468,82 @@ def save_df_table_image(
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
 
     return fig
+
+
+# get_dense_matrix
+def get_dense_matrix(X):
+    """
+    convert sparse matrix to dense numpy array
+    """
+
+    # get_dense_matrix
+    # api:
+    # get_dense_matrix(
+    #     X=adata.X,
+    # )
+
+    if sparse.issparse(X):
+        return X.toarray()
+
+    return np.asarray(X)
+
+
+# get_low_cv_genes
+def get_low_cv_genes(
+    X,
+    gene_names,
+    n_bins=10,
+    bottom_frac=0.10
+):
+    """
+    select low-cv genes from expression matrix
+    """
+
+    # get_low_cv_genes
+    # api:
+    # get_low_cv_genes(
+    #     X=X,
+    #     gene_names=adata.var_names,
+    #     n_bins=10,
+    #     bottom_frac=0.10,
+    # )
+
+    means = X.mean(axis=0)
+    stds = X.std(axis=0, ddof=1)
+
+    cv = stds / (means + 1e-12)
+
+    valid = np.isfinite(cv) & np.isfinite(means) & (means > 0)
+    valid_idx = np.where(valid)[0]
+
+    if len(valid_idx) == 0:
+        return []
+
+    mean_series = pd.Series(means[valid_idx], index=valid_idx)
+
+    bins = pd.qcut(
+        mean_series,
+        q=n_bins,
+        labels=False,
+        duplicates="drop"
+    )
+
+    selected_idx = []
+
+    for bin_id in sorted(bins.dropna().unique()):
+        genes_in_bin = bins.index[bins == bin_id].to_numpy()
+
+        if len(genes_in_bin) == 0:
+            continue
+
+        n_select = max(1, int(np.ceil(len(genes_in_bin) * bottom_frac)))
+
+        bin_cv = cv[genes_in_bin]
+        low_cv_idx = genes_in_bin[np.argsort(bin_cv)[:n_select]]
+
+        selected_idx.extend(low_cv_idx)
+
+    selected_idx = sorted(set(selected_idx))
+    selected_genes = gene_names[selected_idx].tolist()
+
+    return selected_genes
