@@ -2088,7 +2088,7 @@ def plot_chord(
     right_colors=None,
     count_col=None,
     title=None,
-    figsize=(9, 9),
+    figsize=(10, 10),
     inner_radius=1.0,
     arc_width=0.08,
     segment_gap_deg=2.0,
@@ -2100,8 +2100,12 @@ def plot_chord(
     axis_label_fontsize=13,
     axis_label_fontweight="bold",
     segment_label_fontsize=10,
+    segment_label_pad=0.18,
     show_ticks=True,
-    tick_step=50,
+    tick_step="auto",
+    target_n_ticks=5,
+    min_tick_label_gap_deg=4.0,
+    hide_zero_tick_label=False,
     tick_fontsize=7,
     n_arc_pts=24,
     default_color="#aaaaaa",
@@ -2151,10 +2155,33 @@ def plot_chord(
     left_axis_label, right_axis_label : str or None
         bold labels placed at the midpoint of each arc (e.g. ``"DEGs"``,
         ``"Genes"``).
+    segment_label_pad : float
+        radial padding (in axis units) between the outer edge of the ring
+        and the segment text labels. increase this to avoid clashing with
+        cumulative-count tick labels on busy plots.
     show_ticks : bool
         whether to render cumulative-count tick marks on each segment.
-    tick_step : int
-        spacing of tick marks along each segment, in count units.
+    tick_step : int, str, tuple, or dict
+        spacing of tick marks along each segment, in count units. accepts:
+
+        - ``"auto"`` (default): pick a 1/2/5 * 10^k step per side so each
+          side's largest segment has roughly ``target_n_ticks`` major ticks.
+        - ``int``: use the same step on both sides.
+        - ``(left_step, right_step)`` tuple / 2-list: per-side step. each
+          entry may itself be ``"auto"`` or an int.
+        - ``{"left": step, "right": step}`` dict: per-side override.
+    target_n_ticks : int
+        target number of ticks on the largest segment of a side when
+        ``tick_step="auto"``. used to pick a "nice" 1/2/5 * 10^k step.
+    min_tick_label_gap_deg : float
+        minimum angular distance (in degrees) between two tick *labels* on
+        the same side. tick marks themselves are always drawn; labels too
+        close to the previous one are suppressed so the numbers stay
+        readable on small segments.
+    hide_zero_tick_label : bool
+        if True, suppress the ``0`` label at the start of each segment
+        (the tick mark is still drawn). useful when many small segments
+        crowd the ring with zeros.
     n_arc_pts : int
         number of line-segments used to approximate the inner arc per
         ribbon endpoint.
@@ -2177,8 +2204,33 @@ def plot_chord(
     #     right_axis_label="Categories",
     #     left_colors={"IIB": "#7e57c2", "IIX": "#ef9a9a"},
     #     right_colors=category_palette,
+    #     tick_step="auto",             # or e.g. (50, 50) / {"left": 50, "right": 50}
     #     title="Up-enriched pathways → categories",
     # )
+
+    def _nice_tick_step(max_val, target_n=5):
+        """pick a 1/2/5 * 10^k step so max_val / step is roughly target_n."""
+        if max_val <= 0:
+            return 1
+        raw = max_val / max(target_n, 1)
+        mag = 10 ** np.floor(np.log10(raw))
+        for m in (1, 2, 2.5, 5, 10):
+            step = m * mag
+            if step >= raw:
+                return int(step) if step >= 1 else float(step)
+        return int(10 * mag)
+
+    def _resolve_tick_step(user, side, max_total):
+        """resolve tick_step input into a numeric step for the given side."""
+        if isinstance(user, dict):
+            v = user.get(side, "auto")
+        elif isinstance(user, (tuple, list)) and len(user) == 2:
+            v = user[0 if side == "left" else 1]
+        else:
+            v = user
+        if v is None or v == "auto":
+            return _nice_tick_step(max_total, target_n=target_n_ticks)
+        return v
 
     if flow_color not in ("left", "right"):
         raise ValueError("flow_color must be 'left' or 'right'")
@@ -2273,7 +2325,9 @@ def plot_chord(
     fig, ax = plt.subplots(figsize=figsize)
     ax.set_aspect("equal")
     ax.axis("off")
-    lim = inner_radius + arc_width + 0.45
+    # add extra room for tick labels + segment labels + axis labels stacked
+    # radially outside the colored ring
+    lim = inner_radius + arc_width + max(segment_label_pad + 0.30, 0.55)
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
 
@@ -2394,8 +2448,9 @@ def plot_chord(
                 _wedge(a0, a1, r_in, arc_width, right_colors.get(g, default_color))
             )
 
-    # segment labels outside the ring
-    r_label = r_in + arc_width + 0.10
+    # segment labels outside the ring — pushed out via `segment_label_pad`
+    # so they don't collide with cumulative-count tick labels
+    r_label = r_in + arc_width + segment_label_pad
 
     def _segment_label(angle, text, side):
         x = r_label * np.cos(angle)
@@ -2405,6 +2460,7 @@ def plot_chord(
             x, y, str(text),
             ha=ha, va="center",
             fontsize=segment_label_fontsize,
+            fontweight="bold",
         )
 
     for g in left_order:
@@ -2418,7 +2474,7 @@ def plot_chord(
             _segment_label((a0 + a1) / 2, g, side="right")
 
     # axis (side) labels at midpoint of each half
-    r_axis = r_in + arc_width + 0.32
+    r_axis = r_in + arc_width + segment_label_pad + 0.22
 
     if left_axis_label is not None:
         am = (left_a0 + left_a1) / 2
@@ -2445,28 +2501,46 @@ def plot_chord(
         )
 
     # cumulative-count tick marks per segment
-    if show_ticks and tick_step is not None and tick_step > 0:
+    # per-side tick steps are resolved via `tick_step` (scalar / "auto" /
+    # tuple / dict). labels closer than `min_tick_label_gap_deg` to the
+    # previously drawn label on the same side are suppressed so the
+    # numbers stay readable on busy sides; the tick marks themselves are
+    # always drawn.
+    if show_ticks and tick_step is not None and tick_step != 0:
         r_tick_in = r_in + arc_width
         r_tick_out = r_in + arc_width + 0.035
-        r_tick_text = r_in + arc_width + 0.075
+        r_tick_text = r_in + arc_width + 0.085
 
-        for order, ranges, totals in (
-            (left_order, left_ranges, left_totals),
-            (right_order, right_ranges, right_totals),
-        ):
+        min_label_gap = np.deg2rad(min_tick_label_gap_deg)
+
+        side_specs = [
+            ("left",  left_order,  left_ranges,  left_totals),
+            ("right", right_order, right_ranges, right_totals),
+        ]
+
+        for side, order, ranges, totals in side_specs:
+            max_total = max((totals.get(g, 0) for g in order), default=0)
+            step = _resolve_tick_step(tick_step, side, max_total)
+            if step is None or step <= 0:
+                continue
+
+            last_label_ang = None
+
             for g in order:
                 a0, a1 = ranges[g]
                 tot = totals.get(g, 0)
                 if tot <= 0 or a1 <= a0:
                     continue
                 span = a1 - a0
-                n_ticks = int(np.floor(tot / tick_step)) + 1
+                n_ticks = int(np.floor(tot / step)) + 1
                 for k in range(n_ticks):
-                    val = k * tick_step
+                    val = k * step
                     if val > tot:
                         continue
                     frac = val / tot
                     ang = a0 + frac * span
+
+                    # always draw the tick mark
                     x0 = r_tick_in * np.cos(ang)
                     y0 = r_tick_in * np.sin(ang)
                     x1 = r_tick_out * np.cos(ang)
@@ -2474,23 +2548,39 @@ def plot_chord(
                     ax.plot(
                         [x0, x1], [y0, y1],
                         color="black",
-                        linewidth=0.5,
+                        linewidth=0.6,
                         zorder=4,
                     )
+
+                    # decide whether to draw the label
+                    if hide_zero_tick_label and val == 0:
+                        continue
+                    if (
+                        last_label_ang is not None
+                        and abs(ang - last_label_ang) < min_label_gap
+                    ):
+                        continue
+
                     rot_deg = np.rad2deg(ang) - 90
                     if rot_deg > 90:
                         rot_deg -= 180
                     elif rot_deg < -90:
                         rot_deg += 180
+
+                    # render value as int when step is integral
+                    label_text = (
+                        f"{int(val)}" if float(val).is_integer() else f"{val:g}"
+                    )
                     ax.text(
                         r_tick_text * np.cos(ang),
                         r_tick_text * np.sin(ang),
-                        str(val),
+                        label_text,
                         ha="center",
                         va="center",
                         fontsize=tick_fontsize,
                         rotation=rot_deg,
                     )
+                    last_label_ang = ang
 
     if title is not None:
         ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
