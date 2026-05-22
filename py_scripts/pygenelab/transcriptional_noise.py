@@ -7,9 +7,28 @@ functions for transcriptional noise (low-cv intra-group variability) analysis
 # imports
 import numpy as np
 import pandas as pd
-from scipy.stats import mannwhitneyu
+from scipy.stats import mannwhitneyu, ttest_ind
 
 from .utils import get_dense_matrix, get_low_cv_genes
+
+
+# _noise_pvalue
+def _noise_pvalue(data1, data2, test="mannwhitneyu"):
+    """
+    compute two-sided p-value for two noise samples.
+    test: "mannwhitneyu" (rank-based, non-parametric, default),
+          "ttest" (Student's t-test, equal variance),
+          "welch" (Welch's t-test, unequal variance).
+    """
+    if test == "mannwhitneyu":
+        return mannwhitneyu(data1, data2, alternative="two-sided").pvalue
+    if test == "ttest":
+        return ttest_ind(data1, data2, equal_var=True).pvalue
+    if test == "welch":
+        return ttest_ind(data1, data2, equal_var=False).pvalue
+    raise ValueError(
+        f"unknown test {test!r}; expected 'mannwhitneyu', 'ttest', or 'welch'"
+    )
 
 
 # calculate_noise_one_celltype
@@ -23,7 +42,8 @@ def calculate_noise_one_celltype(
     min_cells=10,
     n_bins=10,
     bottom_frac=0.10,
-    random_state=1
+    random_state=1,
+    test="mannwhitneyu"
 ):
     """
     calculate transcriptional noise for one cell type
@@ -132,11 +152,7 @@ def calculate_noise_one_celltype(
     })
 
     # compare noise distributions
-    pval = mannwhitneyu(
-        noise_group1,
-        noise_group2,
-        alternative="two-sided"
-    ).pvalue
+    pval = _noise_pvalue(noise_group1, noise_group2, test=test)
 
     mean_noise_group1 = noise_group1.mean()
     mean_noise_group2 = noise_group2.mean()
@@ -154,6 +170,7 @@ def calculate_noise_one_celltype(
         f"mean_noise_{group2}": mean_noise_group2,
         f"log2_{group2}_over_{group1}": log2_ratio,
         "pval": pval,
+        "test": test,
         "n_low_cv_genes": len(low_cv_genes)
     }
 

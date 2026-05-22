@@ -14,10 +14,12 @@ import decoupler as dc
 
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
+from scipy.stats import mannwhitneyu, ttest_ind
 from matplotlib.lines import Line2D
 from matplotlib.collections import PathCollection
+from matplotlib.colors import to_rgba
 
-from .utils import calculate_pairwise_significance
+from .utils import calculate_pairwise_significance, cliffs_delta
 
 
 # plot_gene_contribution_heatmap
@@ -1570,6 +1572,26 @@ def display_plots_side_by_side(figures, width=400, save_path=None):
         combined.save(save_path)
 
 
+# _significance_label
+def _significance_label(pval):
+    """convert a p-value to a star/NS annotation string"""
+    if pval is None:
+        return "NS"
+    try:
+        p = float(pval)
+    except (TypeError, ValueError):
+        return "NS"
+    if not np.isfinite(p):
+        return "NS"
+    if p < 0.001:
+        return "***"
+    if p < 0.01:
+        return "**"
+    if p < 0.05:
+        return "*"
+    return "NS"
+
+
 # plot_transcriptional_noise
 def plot_transcriptional_noise(
     noise_all_df,
@@ -1578,10 +1600,19 @@ def plot_transcriptional_noise(
     noise_col="noise",
     celltype_order=None,
     group_order=("WT", "KO"),
+    group_labels=None,
+    colors=("#6F4E37", "#C19A6B"),
     figsize=(14, 5),
-    title="WT vs KO Transcriptional Noise",
-    bar_width=0.5,
-    bar_step=0.6
+    title="Control vs Skm-KO Transcriptional Noise",
+    bar_width=0.15,
+    bar_step=0.18,
+    face_alpha=0.85,
+    whisker_alpha=0.4,
+    show_significance=True,
+    pvalues=None,
+    deltas=None,
+    sig_fontsize=10,
+    test="mannwhitneyu"
 ):
     """
     plot transcriptional noise boxplot
@@ -1599,6 +1630,11 @@ def plot_transcriptional_noise(
     if celltype_order is None:
         celltype_order = noise_all_df[celltype_col].dropna().unique().tolist()
 
+    # default display labels: rename WT -> Control, KO -> Skm-KO (fallback to raw value)
+    if group_labels is None:
+        group_labels = {"WT": "Control", "KO": "Skm-KO"}
+    display_labels = [group_labels.get(g, g) for g in group_order]
+
     plot_data = [
         noise_all_df[
             (noise_all_df[celltype_col] == celltype) &
@@ -1611,12 +1647,10 @@ def plot_transcriptional_noise(
     # uniform spacing: every adjacent bar is bar_step apart (no extra gap between celltype pairs)
     n_groups = len(group_order)
     positions = []
-    labels = []
 
     pos = 1.0
     for celltype in celltype_order:
         positions.extend([pos + i * bar_step for i in range(n_groups)])
-        labels.append(celltype)
         pos += n_groups * bar_step
 
     fig, ax = plt.subplots(figsize=figsize)
@@ -1629,15 +1663,28 @@ def plot_transcriptional_noise(
         showfliers=False
     )
 
-    colors = {
-        group_order[0]: "#50BA47",
-        group_order[1]: "#A15DBA"
-    }
-
+    # box face translucent, stroke opaque
     for i, box in enumerate(bp["boxes"]):
-        group = group_order[i % len(group_order)]
-        box.set_facecolor(colors[group])
-        box.set_alpha(0.8)
+        color = colors[i % len(colors)]
+        box.set_facecolor(to_rgba(color, alpha=face_alpha))
+        box.set_edgecolor("black")
+        box.set_linewidth(1.2)
+
+    # translucent error lines (whiskers + caps)
+    for whisker in bp["whiskers"]:
+        whisker.set_color("black")
+        whisker.set_alpha(whisker_alpha)
+        whisker.set_linewidth(1.0)
+
+    for cap in bp["caps"]:
+        cap.set_color("black")
+        cap.set_alpha(whisker_alpha)
+        cap.set_linewidth(1.0)
+
+    # opaque median line
+    for median in bp["medians"]:
+        median.set_color("black")
+        median.set_linewidth(1.2)
 
     # set x-axis labels at the center of each celltype's group
     tick_positions = [
@@ -1652,23 +1699,141 @@ def plot_transcriptional_noise(
     ax.set_xlabel("Cell type")
     ax.set_title(title)
 
-    # add legend
+    # legend uses display labels (e.g. Control / Skm-KO) plus a glossary entry
+    # explaining the triangle glyph used in the bracket annotations
     legend_handles = [
         plt.Line2D(
             [0],
             [0],
-            color=colors[group],
+            color=colors[i % len(colors)],
             lw=8,
-            label=group
+            label=display_labels[i]
         )
-        for group in group_order
+        for i in range(n_groups)
     ]
+
+    if show_significance and n_groups == 2:
+        legend_handles.append(
+            plt.Line2D(
+                [],
+                [],
+                linestyle="None",
+                marker="None",
+                label="Cliff's δ = △"
+            )
+        )
 
     ax.legend(
         handles=legend_handles,
         title=condition_col,
         frameon=False
     )
+
+    # significance brackets (only for 2-group comparisons)
+    if show_significance and n_groups == 2:
+
+        # ensure dicts exist so we can fill in missing entries below
+        if pvalues is None:
+            pvalues = {}
+        if deltas is None:
+            deltas = {}
+
+        # fill in any missing pvalues or deltas per celltype
+        for ct in celltype_order:
+            need_pval = ct not in pvalues
+            need_delta = ct not in deltas
+
+            if not (need_pval or need_delta):
+                continue
+
+            data1 = noise_all_df[
+                (noise_all_df[celltype_col] == ct) &
+                (noise_all_df[condition_col] == group_order[0])
+            ][noise_col].dropna().values
+
+            data2 = noise_all_df[
+                (noise_all_df[celltype_col] == ct) &
+                (noise_all_df[condition_col] == group_order[1])
+            ][noise_col].dropna().values
+
+            if len(data1) == 0 or len(data2) == 0:
+                if need_pval:
+                    pvalues[ct] = np.nan
+                if need_delta:
+                    deltas[ct] = np.nan
+                continue
+
+            if need_pval:
+                if test == "mannwhitneyu":
+                    pvalues[ct] = mannwhitneyu(
+                        data1, data2, alternative="two-sided"
+                    ).pvalue
+                elif test == "ttest":
+                    pvalues[ct] = ttest_ind(
+                        data1, data2, equal_var=True
+                    ).pvalue
+                elif test == "welch":
+                    pvalues[ct] = ttest_ind(
+                        data1, data2, equal_var=False
+                    ).pvalue
+                else:
+                    raise ValueError(
+                        f"unknown test {test!r}; expected "
+                        "'mannwhitneyu', 'ttest', or 'welch'"
+                    )
+
+            if need_delta:
+                # group2 vs group1 -> positive delta means group2 has larger values
+                deltas[ct] = cliffs_delta(data2, data1)
+
+        # size the bracket padding relative to y-range
+        all_whisker_y = [v for w in bp["whiskers"] for v in w.get_ydata()]
+        y_max = max(all_whisker_y) if all_whisker_y else 1.0
+        y_min = min(all_whisker_y) if all_whisker_y else 0.0
+        y_range = (y_max - y_min) if y_max > y_min else 1.0
+        padding = y_range * 0.04
+        tick_height = padding * 0.4
+
+        for i, ct in enumerate(celltype_order):
+            pair_whisker_start = i * n_groups * 2
+            pair_whiskers = bp["whiskers"][pair_whisker_start:pair_whisker_start + n_groups * 2]
+
+            if not pair_whiskers:
+                continue
+
+            pair_upper = max(max(w.get_ydata()) for w in pair_whiskers)
+            bracket_y = pair_upper + padding
+
+            x_left = positions[i * n_groups]
+            x_right = positions[i * n_groups + (n_groups - 1)]
+
+            ax.plot(
+                [x_left, x_left, x_right, x_right],
+                [bracket_y - tick_height, bracket_y, bracket_y, bracket_y - tick_height],
+                color="black",
+                linewidth=1.0
+            )
+
+            # always show cliff's delta (rendered as a triangle glyph; see legend)
+            # (positive delta -> group2 (e.g. KO) higher; negative -> group1 (WT) higher)
+            d = deltas.get(ct, np.nan)
+            if d is not None and np.isfinite(d):
+                label = f"△={d:.2f}"
+            else:
+                label = "NA"
+
+            ax.text(
+                (x_left + x_right) / 2,
+                bracket_y + tick_height * 0.4,
+                label,
+                ha="center",
+                va="bottom",
+                fontsize=sig_fontsize
+            )
+
+        # extend y-axis so brackets/labels are not clipped
+        cur_ylo, cur_yhi = ax.get_ylim()
+        ax.set_ylim(cur_ylo, cur_yhi + padding * 3)
 
     plt.tight_layout()
 
