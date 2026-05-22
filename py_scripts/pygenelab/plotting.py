@@ -18,6 +18,8 @@ from scipy.stats import mannwhitneyu, ttest_ind
 from matplotlib.lines import Line2D
 from matplotlib.collections import PathCollection
 from matplotlib.colors import to_rgba
+from matplotlib.path import Path
+import matplotlib.patches as patches
 
 from .utils import calculate_pairwise_significance, cliffs_delta
 
@@ -1834,6 +1836,241 @@ def plot_transcriptional_noise(
         # extend y-axis so brackets/labels are not clipped
         cur_ylo, cur_yhi = ax.get_ylim()
         ax.set_ylim(cur_ylo, cur_yhi + padding * 3)
+
+    plt.tight_layout()
+
+    return fig, ax
+
+
+# plot_sankey
+def plot_sankey(
+    data,
+    left_col,
+    right_col,
+    left_order=None,
+    right_order=None,
+    left_colors=None,
+    right_colors=None,
+    title=None,
+    figsize=(10, 7),
+    bar_width=0.03,
+    x_left=0.28,
+    x_right=0.58,
+    alpha=0.4,
+    left_label_fontsize=10,
+    right_label_fontsize=9,
+    left_label_fontweight="bold",
+    flow_color="left",
+    default_color="#aaaaaa",
+):
+    """
+    plot a two-column sankey diagram from a long-format dataframe
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        long-format dataframe with at least `left_col` and `right_col`
+        (e.g. adata.obs). flow widths are computed from row counts.
+    left_col, right_col : str
+        column names mapped to the left and right stacked bars.
+    left_order, right_order : list or None
+        ordering of categories on each side. defaults to category order
+        for pandas Categorical, otherwise unique() order.
+    left_colors, right_colors : dict or None
+        {category: color} for each side. missing categories fall back to
+        `default_color`.
+    title : str or None
+        figure title.
+    figsize : tuple
+        figure dimensions.
+    bar_width : float
+        width of the stacked bars in axis units.
+    x_left, x_right : float
+        x-positions of the left and right bars in axis units (0-1).
+    alpha : float
+        flow ribbon transparency.
+    flow_color : {"left", "right"}
+        which side's color is used for the ribbons.
+    default_color : str
+        fallback color for categories not present in the color dict.
+    """
+
+    # plot_sankey
+    # api:
+    # fig, ax = plot_sankey(
+    #     data=adata.obs,
+    #     left_col="sex",
+    #     right_col="re_annot",
+    #     left_order=["F", "M"],
+    #     left_colors={"F": "#e8a0a0", "M": "#5dbdb2"},
+    #     right_colors=cell_type_colors,
+    #     title="Cell Proportion",
+    # )
+
+    # check columns exist
+    for col in (left_col, right_col):
+        if col not in data.columns:
+            raise ValueError(f"{col} was not found in data columns")
+
+    # check flow_color
+    if flow_color not in ("left", "right"):
+        raise ValueError("flow_color must be 'left' or 'right'")
+
+    # build counts
+    df = (
+        data.groupby([left_col, right_col], observed=True)
+        .size()
+        .reset_index(name="count")
+    )
+
+    # default category orders
+    def _default_order(col):
+        series = data[col]
+        if hasattr(series, "cat"):
+            return series.cat.categories.tolist()
+        return list(pd.unique(series))
+
+    if left_order is None:
+        left_order = _default_order(left_col)
+    if right_order is None:
+        right_order = _default_order(right_col)
+
+    # default colors
+    if left_colors is None:
+        tab = plt.cm.tab20.colors
+        left_colors = {g: tab[i % len(tab)] for i, g in enumerate(left_order)}
+    if right_colors is None:
+        tab = plt.cm.tab20.colors
+        right_colors = {g: tab[i % len(tab)] for i, g in enumerate(right_order)}
+
+    # figure / axes
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    gap = 0.008
+
+    # stacked-bar positions
+    def _calc_positions(groups, counts_dict):
+        total = sum(counts_dict.get(g, 0) for g in groups)
+        positions = {}
+        y = 0.05
+        if total == 0:
+            return {g: (y, y) for g in groups}
+        for g in groups:
+            h = (counts_dict.get(g, 0) / total) * 0.9
+            positions[g] = (y, y + h)
+            y += h + gap * 0.5
+        return positions
+
+    left_totals = df.groupby(left_col, observed=True)["count"].sum().to_dict()
+    right_totals = df.groupby(right_col, observed=True)["count"].sum().to_dict()
+
+    left_pos = _calc_positions(left_order, left_totals)
+    right_pos = _calc_positions(right_order, right_totals)
+
+    # draw flows
+    left_fill = {g: left_pos[g][0] for g in left_order}
+    right_fill = {g: right_pos[g][0] for g in right_order}
+
+    # iterate in stacked order so ribbons stack cleanly
+    df_sorted = df.copy()
+    df_sorted[left_col] = pd.Categorical(
+        df_sorted[left_col], categories=left_order, ordered=True
+    )
+    df_sorted[right_col] = pd.Categorical(
+        df_sorted[right_col], categories=right_order, ordered=True
+    )
+    df_sorted = df_sorted.sort_values([left_col, right_col])
+
+    for _, row in df_sorted.iterrows():
+        lg, rg, cnt = row[left_col], row[right_col], row["count"]
+
+        l_total = left_totals.get(lg, 0)
+        r_total = right_totals.get(rg, 0)
+        if l_total == 0 or r_total == 0 or cnt == 0:
+            continue
+
+        l_span = left_pos[lg][1] - left_pos[lg][0]
+        r_span = right_pos[rg][1] - right_pos[rg][0]
+
+        lh = (cnt / l_total) * l_span
+        rh = (cnt / r_total) * r_span
+
+        ly0 = left_fill[lg]
+        ry0 = right_fill[rg]
+        ly1 = ly0 + lh
+        ry1 = ry0 + rh
+
+        left_fill[lg] += lh
+        right_fill[rg] += rh
+
+        mid_x = (x_left + bar_width + x_right) / 2
+        verts = [
+            (x_left + bar_width, ly0),
+            (mid_x, ly0),
+            (mid_x, ry0),
+            (x_right, ry0),
+            (x_right, ry1),
+            (mid_x, ry1),
+            (mid_x, ly1),
+            (x_left + bar_width, ly1),
+            (x_left + bar_width, ly0),
+        ]
+        codes = [
+            Path.MOVETO,
+            Path.CURVE4, Path.CURVE4, Path.CURVE4,
+            Path.LINETO,
+            Path.CURVE4, Path.CURVE4, Path.CURVE4,
+            Path.CLOSEPOLY,
+        ]
+        path = Path(verts, codes)
+
+        if flow_color == "left":
+            face = left_colors.get(lg, default_color)
+        else:
+            face = right_colors.get(rg, default_color)
+
+        patch = patches.PathPatch(
+            path,
+            facecolor=face,
+            edgecolor="none",
+            alpha=alpha,
+            zorder=1,
+        )
+        ax.add_patch(patch)
+
+    # draw bars
+    for g in left_order:
+        y0, y1 = left_pos[g]
+        ax.add_patch(plt.Rectangle(
+            (x_left, y0), bar_width, y1 - y0,
+            color=left_colors.get(g, default_color),
+            zorder=2, linewidth=0,
+        ))
+        ax.text(
+            x_left - 0.01, (y0 + y1) / 2, str(g),
+            ha="right", va="center",
+            fontsize=left_label_fontsize,
+            fontweight=left_label_fontweight,
+        )
+
+    for g in right_order:
+        y0, y1 = right_pos[g]
+        ax.add_patch(plt.Rectangle(
+            (x_right, y0), bar_width, y1 - y0,
+            color=right_colors.get(g, default_color),
+            zorder=2, linewidth=0,
+        ))
+        ax.text(
+            x_right + bar_width + 0.01, (y0 + y1) / 2, str(g),
+            ha="left", va="center",
+            fontsize=right_label_fontsize,
+        )
+
+    if title is not None:
+        ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
 
     plt.tight_layout()
 
