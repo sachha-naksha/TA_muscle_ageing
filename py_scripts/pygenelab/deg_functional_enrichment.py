@@ -237,15 +237,21 @@ def create_ranked_genelist(
     pval_col="pvals_adj",
     gene_col="gene_name",
     min_pval=1e-300,
+    top_n=None,
 ):
     """
     create a (1 x n_genes) ranked DataFrame for decoupler GSEA based on
     signed log2FC * -log10(padj).
+
+    if top_n is given, keep only the top_n genes by |ranking_score|, which
+    preserves the most extreme up- and down-regulated genes for signed GSEA.
     """
     df = deg_df.copy()
     df[pval_col] = df[pval_col].clip(lower=min_pval)
     df["neg_log10_pval"] = -np.log10(df[pval_col])
     df["ranking_score"] = df[log2fc_col] * df["neg_log10_pval"]
+    if top_n is not None and len(df) > top_n:
+        df = df.reindex(df["ranking_score"].abs().sort_values(ascending=False).index).head(top_n)
     df = df.sort_values("ranking_score", ascending=False)
     return df.set_index(gene_col)[["ranking_score"]].T
 
@@ -513,6 +519,7 @@ def run_pipeline(
     log2fc_col="logfoldchanges",
     pval_col="pvals_adj",
     gene_col="gene_name",
+    rank_top_n=None,
     title=None,
     output_dir=None,
     save_basename=None,
@@ -544,6 +551,7 @@ def run_pipeline(
             log2fc_col=log2fc_col,
             pval_col=pval_col,
             gene_col=gene_col,
+            top_n=rank_top_n,
         )
         for lbl, df in degs.items()
     }
