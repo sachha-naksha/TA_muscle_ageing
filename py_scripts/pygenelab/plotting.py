@@ -208,7 +208,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
                           figsize=(5, 6), scatter_size=4, scatter_alpha=0.6,
                           violin_width=0.7, box_width=0.35, jitter=0.15,
                           show_pvalue=True, delta_label=None,
-                          group_spacing=1.0, x_pad=0.5):
+                          group_spacing=1.0, x_pad=0.5, ylim=None):
     """
     Create a combined violin-box plot with optional scatter points.
 
@@ -250,17 +250,21 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
     plt.subplots_adjust(left=0.15, right=0.85, bottom=0.12, top=0.88)
 
     # ── y-axis limits ──────────────────────────────────────────────
-    y_min, y_max = data[y_var].min(), data[y_var].max()
-    y_range = y_max - y_min
-    padding = y_range * 0.10
-    y_min_plot = y_min - padding
-    y_max_plot = y_max + padding
-
-    if y_range > 1.0:
-        y_min_plot = np.floor(y_min_plot)
-        y_max_plot = np.ceil(y_max_plot)
+    if ylim is not None:
+        y_min_plot, y_max_plot = ylim
+        y_range = y_max_plot - y_min_plot
     else:
-        y_min_plot = max(0, y_min_plot)
+        y_min, y_max = data[y_var].min(), data[y_var].max()
+        y_range = y_max - y_min
+        padding = y_range * 0.10
+        y_min_plot = y_min - padding
+        y_max_plot = y_max + padding
+
+        if y_range > 1.0:
+            y_min_plot = np.floor(y_min_plot)
+            y_max_plot = np.ceil(y_max_plot)
+        else:
+            y_min_plot = max(0, y_min_plot)
 
     ax.set_ylim(y_min_plot, y_max_plot)
 
@@ -380,7 +384,10 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
                                  sig_data['significance'])
             bar_height += bar_spacing
 
-    ax.set_ylim(current_ymin, bar_height + bar_spacing * 0.5)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    else:
+        ax.set_ylim(current_ymin, bar_height + bar_spacing * 0.5)
 
     # ── titles & labels ────────────────────────────────────────────
     if title:
