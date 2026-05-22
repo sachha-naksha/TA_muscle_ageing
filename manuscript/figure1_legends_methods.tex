@@ -1,0 +1,72 @@
+% figure1_legends_methods.tex
+% Figure legends (panels A--G) and Methods section for the main figure of
+% the TA muscle ERCC1 / Skm-KO snRNA-seq study.
+%
+% This is a standalone fragment intended to be \input{} into the main
+% manuscript file. It defines no preamble, only document body.
+% Required packages in the parent document:
+%   \usepackage{graphicx}     % figures
+%   \usepackage[utf8]{inputenc}
+%   \usepackage{textcomp}     % for unicode-ish symbols
+%   \usepackage{xspace}
+%   \usepackage{url}          % for \url
+%
+% All quantitative claims (cell counts, parameters, statistics) reflect the
+% code as committed at the time of writing; update if pipelines change.
+% Code references use ``backticks'' for paths relative to the repo root.
+
+\section*{Figure 1. Single-nucleus transcriptomic atlas of the tibialis anterior muscle in muscle-specific ERCC1 knockout (Skm-KO) and littermate Control mice.}
+
+\textbf{(A)} UMAP embedding of 87{,}916 high-quality nuclei from tibialis anterior (TA) muscle profiled by snRNA-seq, integrated across the Skm-KO cohort (this study, $n=50{,}394$ nuclei) and a contemporaneously processed aging-reference cohort ($n=37{,}522$ nuclei) on a shared scANVI latent space. Thirteen transcriptionally distinct populations were resolved and annotated by canonical markers: fast-twitch myofibers (Fast IIB, Fast IIX, Fast IIA), their respective myotendinous-junction sub-states (MTJ-IIB, MTJ-IIX, MTJ-IIA), muscle stem cells (MuSC), fibro-adipogenic progenitors (FAPs), endothelial cells (EC), pericytes, tenocytes (Tendon), neuromuscular-junction nuclei (NMJ), and macrophages.
+
+\textbf{(B)} Per-genotype composition of the atlas. Columns report the percentage of nuclei assigned to each cell type within the Control and Skm-KO conditions, computed as column-normalized cross-tabulations of \texttt{adata.obs[`re\_annot'']} against \texttt{adata.obs[`condition'']}. Type IIB myofibers dominate both genotypes ($\sim$47--50\%), with subtle Skm-KO-associated enrichments visible in EC, MTJ-IIB, Pericyte and Tendon compartments.
+
+\textbf{(C)} Dot plot of canonical lineage and fiber-type marker genes across the eight myogenic and stromal populations resolved at the muscle-fiber resolution. Dot color encodes mean log1p-normalized expression rescaled per gene (\texttt{standard\_scale="var"}); dot size encodes the fraction of nuclei in each population expressing the gene. Markers shown: FAP (\textit{Col1a1}, \textit{Dcn}, \textit{Pdgfra}, \textit{Cd34}), MuSC (\textit{Pax7}), MTJ (\textit{Csrp3}, \textit{Ankrd1}, \textit{Col22a1}), Fast IIA (\textit{Lpl}, \textit{Atp2a1}), pan-fast troponins (\textit{Tnnc2}, \textit{Tnnt3}), and the three adult fast-isoform myosin heavy chains \textit{Myh4} (IIB), \textit{Myh1} (IIX), and \textit{Myh2} (IIA).
+
+\textbf{(D)} Transcriptional heterogeneity per cell type, defined as the per-nucleus Euclidean distance to the within-group centroid in a low-coefficient-of-variation (low-CV) gene space (see Methods). Box plots show the distribution of heterogeneity values for Control (dark) and Skm-KO (light) nuclei in each cell type. Cliff's delta ($\delta$) is annotated above each pair as a non-parametric, scale-free effect size for the Control vs.\ Skm-KO contrast; $\delta>0$ indicates higher heterogeneity in Control.
+
+\textbf{(E)} Alluvial diagram linking sex (Male, Female) on the bottom axis to type 2 myofiber identity (Fast IIA, Fast IIX, Fast IIB) on the top axis. Ribbon widths are proportional to nucleus counts. The diagram highlights the well-known male bias toward Fast IIB and the female bias toward Fast IIX in mouse TA muscle and was used to motivate the sex-stratified analysis in panels F--G.
+
+\textbf{(F)} UMAP of the type 2 myofiber compartment alone (Fast IIA, Fast IIX, Fast IIB; outlier removed at UMAP$_1 < 4.75$), recomputed on the same scANVI latent space as in panel A. Cells are colored, from left to right, by myofiber type, by sex (M, F), and by genotype (Control, Skm-KO).
+
+\textbf{(G)} Activity of two functional gene programs in the Fast IIB compartment, stratified by sex (male, blue; female, pink) and genotype (Control vs.\ Skm-KO). Left, AUCell scores for the \texttt{GOBP\_DNA\_REPAIR} gene set (MSigDB C5; mouse orthologs). Right, an atrophy-program score computed from a curated skeletal-muscle atrophy gene list. Within each sex, Cliff's $\delta$ for the Control vs.\ Skm-KO contrast is annotated above the panel ($\delta > 0$, higher in Skm-KO; $\delta < 0$, higher in Control); three asterisks denote $p < 0.001$ by two-sided Mann--Whitney $U$ test. DNA-repair activity is lower in female Skm-KO Fast IIB nuclei while atrophy activity is concomitantly higher in females, consistent with a sexually dimorphic genotoxic-stress response in the Skm-KO muscle.
+
+\vspace{1em}
+
+\section*{Methods}
+
+\subsection*{Animals and tissue collection}
+All animal procedures were approved by the Institutional Animal Care and Use Committee. Skeletal-muscle-specific ERCC1 knockout mice (Skm-KO) and Control littermates of both sexes were euthanized at matched age. The tibialis anterior (TA) muscle was rapidly dissected, snap-frozen in liquid-nitrogen-cooled isopentane, and stored at $-80\,^{\circ}$C until nuclear isolation. Twelve TA samples were processed in total (three biological replicates per genotype $\times$ sex group).
+
+\subsection*{Single-nucleus RNA-sequencing}
+Nuclei were isolated from frozen TA tissue and loaded onto the $10\times$ Genomics Chromium platform. Reads were aligned to the mouse reference transcriptome (\texttt{mm10}) and quantified with Cell Ranger, following the workflow under \texttt{bash\_scripts/} of the accompanying repository. Per-droplet ambient RNA contamination was estimated and removed with \texttt{cellbender remove-background}; downstream analyses use the cellbender-corrected count matrix as the primary expression layer.
+
+\subsection*{Quality control, doublet removal, and normalization}
+Per-cell QC, doublet calling and pre-processing are implemented in \texttt{py\_scripts/1\_preproc/ref\_preproc.ipynb} and \texttt{query\_preproc.ipynb}. Nuclei were retained if (i) the cellbender posterior cell-probability exceeded $0.99$ and (ii) at least 200 genes were detected. Putative doublets were identified per sample with Scrublet and discarded. Mitochondrial, ribosomal (\texttt{Rp[sl]*}) and hemoglobin genes were excluded from the variable-gene pool. Counts were normalized per cell to a target sum of $10^{4}$ and log1p-transformed (\texttt{scanpy.pp.normalize\_total} followed by \texttt{scanpy.pp.log1p}). 3{,}000 highly variable genes were selected with the Seurat v3 flavor (\texttt{flavor="seurat\_v3"}) in a batch-aware fashion across the two cohorts (\texttt{batch\_key="batch"}).
+
+\subsection*{Cross-cohort integration with scVI/scANVI}
+The Skm-KO cohort (50{,}394 nuclei) and the aging-reference cohort (37{,}522 nuclei) were intersected on their common gene space ($\sim$20{,}500 genes) and integrated using \texttt{scvi-tools} (\texttt{v1.4.0}). A scVI model was trained on the cellbender counts of the HVG matrix with \texttt{n\_layers}$=2$, \texttt{n\_latent}$=32$, \texttt{n\_hidden}$=128$ for 91 epochs, conditioning on the cohort batch. A scANVI label-transfer model was then initialized from the trained scVI weights and fine-tuned for 20 additional epochs with \texttt{n\_samples\_per\_label}$=100$, propagating reference-cohort cell-type labels to the query cohort. A nearest-neighbor graph was constructed on the resulting scANVI latent space (\texttt{X\_scANVI}) and embedded in 2D with UMAP (\texttt{min\_dist}$=0.3$).
+
+\subsection*{Cell-type annotation}
+Initial annotations were inherited from the reference cohort via scANVI and refined by inspection of canonical markers (Fig.~1C). Fast-twitch myofibers were sub-classified by their dominant adult myosin-heavy-chain transcript: \textit{Myh2}~$\rightarrow$~Fast IIA, \textit{Myh1}~$\rightarrow$~Fast IIX, \textit{Myh4}~$\rightarrow$~Fast IIB, with a corresponding MTJ sub-state (MTJ-IIA / MTJ-IIX / MTJ-IIB) called on nuclei expressing the myotendinous-junction module (\textit{Col22a1}, \textit{Ankrd1}, \textit{Csrp3}) alongside the same myosin call. Refined labels are stored in \texttt{adata.obs["re\_annot"]}.
+
+\subsection*{Composition analysis (Panel B)}
+Per-genotype composition was computed as the column-normalized cross-tabulation of \texttt{adata.obs["re\_annot"]} against \texttt{adata.obs["condition"]} (\texttt{Control}, \texttt{Skm-KO}) on the post-QC, post-integration object, and rendered as a sortable two-column percentage table (see \texttt{py\_scripts/2\_single\_nuc\_inspection/snRNA\_related.ipynb}).
+
+\subsection*{Marker dot plot (Panel C)}
+For visualization, expression was drawn from the log1p-normalized cellbender layer of the full 3{,}000-HVG matrix (\texttt{adata\_full}) and rendered with \texttt{scanpy.pl.dotplot} using \texttt{standard\_scale="var"} (rescaling each gene's mean expression to $[0,1]$), the \texttt{Reds} color map, and \texttt{swap\_axes=True}.
+
+\subsection*{Transcriptional heterogeneity (Panel D)}
+Per-cell-type transcriptional heterogeneity was quantified using the \texttt{calculate\_noise\_one\_celltype} routine in \texttt{py\_scripts/pygenelab/transcriptional\_noise.py}, with the following procedure. For each cell type, equal-sized Control and Skm-KO populations were drawn without replacement up to a cap of 500 nuclei per condition (\texttt{max\_cells=500}, \texttt{min\_cells=10}, \texttt{random\_state=1}); cell types with fewer than 10 nuclei in either condition were skipped. A low-CV (``invariant'') gene panel was selected within the sampled cells by binning genes into deciles of mean expression (\texttt{n\_bins=10}) and retaining the lowest-CV 10\% of genes within each bin (\texttt{bottom\_frac=0.10}). For each condition, a centroid expression vector was computed in this low-CV gene space, and the per-nucleus transcriptional heterogeneity was defined as the Euclidean distance from each nucleus to its own condition's centroid. The two heterogeneity distributions were compared with a two-sided Mann--Whitney $U$ test (\texttt{test="mannwhitneyu"}), and effect size was reported as Cliff's $\delta$ (\texttt{pygenelab.utils.cliffs\_delta}); $\delta \in [-1,1]$ where $\delta>0$ indicates higher heterogeneity in Control. $p$-values were corrected across cell types by the Benjamini--Hochberg procedure (FDR). Box plots overlay Control (dark) and Skm-KO (light) distributions with $\delta$ annotated above each pair.
+
+\subsection*{Type 2 myofiber stratification (Panels E--F)}
+Cells annotated as Fast IIA, Fast IIX or Fast IIB in \texttt{adata.obs["re\_annot"]} were extracted (68{,}495 nuclei). Outliers at \texttt{UMAP\_1}$<4.75$ were removed and the remaining nuclei were re-plotted on the integrated UMAP from panel A. Sex (Male, Female) was inferred from sample metadata and stored in \texttt{adata.obs["sex"]}. Panel E was rendered with a custom Sankey/alluvial routine (\texttt{pygenelab.plot\_sankey}) using the same color palette as in panel A; panel F shows the type-2-myofiber subset colored by myofiber type, sex and genotype on a shared UMAP coordinate system.
+
+\subsection*{Gene-set activity scoring (Panel G)}
+Pathway-level scoring was performed with the \texttt{geneset\_activity} pipeline in \texttt{py\_scripts/pygenelab/geneset\_activity.py}. For each gene set, a decoupler-format \texttt{(source, target)} table was built from the corresponding MSigDB \texttt{.gmt} file (\texttt{convert\_gmt\_to\_decoupler\_format}, mouse-case symbols) and gene-symbol overlap with \texttt{adata.var\_names} was reported (\texttt{report\_geneset\_overlap}). Per-nucleus enrichment scores were then computed with \texttt{decoupler.mt.aucell} (AUCell, Aibar et al., 2017) and copied to \texttt{adata.obs} as the score column. The DNA-repair program was scored from \texttt{GOBP\_DNA\_REPAIR} (MSigDB C5, mouse orthologs); the atrophy program was scored from a curated skeletal-muscle atrophy gene set assembled from the literature (provided as a GMT under the project gene-set directory). Scoring was restricted to Fast IIB nuclei (\texttt{adata.obs["re\_annot"]=="Fast IIB"}, 22{,}923 nuclei; Control $n=8{,}915$, Skm-KO $n=14{,}008$) and visualized as violin/box combo plots stratified by sex $\times$ genotype using \texttt{plot\_violin\_box\_combo} from \texttt{pygenelab.plotting}. Within each sex, the Control vs.\ Skm-KO contrast was tested with a two-sided Mann--Whitney $U$ test and quantified with Cliff's $\delta$ via \texttt{cliffs\_delta\_table}; $\delta$ and significance stars are shown above each panel.
+
+\subsection*{Statistics}
+All effect sizes between Control and Skm-KO groups are reported as Cliff's $\delta$ (range $[-1,1]$; $\delta>0$, higher in the first-named group; $\delta<0$, higher in the second). Significance, where shown, is from two-sided Mann--Whitney $U$ tests: $* \, p<0.05$, $** \, p<0.01$, $*** \, p<0.001$; ns, not significant. Multi-comparison correction across cell types or pathways uses the Benjamini--Hochberg FDR procedure where stated.
+
+\subsection*{Data and code availability}
+All analysis code used to generate the panels of Figure~1 is available in the GitHub repository \url{https://github.com/sachha-naksha/TA_muscle_ageing}. Specifically: integration in \texttt{py\_scripts/1\_preproc/integration.ipynb}; composition and marker dot plot in \texttt{py\_scripts/2\_single\_nuc\_inspection/snRNA\_related.ipynb}; transcriptional heterogeneity in \texttt{py\_scripts/2\_single\_nuc\_inspection/Transcriptional\_Heterogeneity.ipynb}; type 2 myofiber re-clustering and Sankey in \texttt{py\_scripts/2\_single\_nuc\_inspection/re\_cluster.ipynb}; and gene-set activity scoring in \texttt{py\_scripts/3\_geneset\_scores/geneset\_activity.ipynb}. Reusable utilities are packaged under \texttt{py\_scripts/pygenelab/}.
