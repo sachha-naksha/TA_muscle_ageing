@@ -15,6 +15,7 @@ import decoupler as dc
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 from matplotlib.lines import Line2D
+from matplotlib.collections import PathCollection
 
 from .utils import calculate_pairwise_significance
 
@@ -129,11 +130,85 @@ def plot_gene_contribution_heatmap(
 
 
 # plot_violin_box_combo
+def _compress_group_spacing(ax, n_categories, spacing, x_pad=0.5):
+    """move categorical artists from integer positions (0,1,2,...) to positions
+    `spacing` apart, without resizing the violins/boxes/scatter. `spacing=1.0`
+    leaves the plot unchanged; `spacing<1` reduces the gap between groups.
+    """
+    from matplotlib.collections import PathCollection
+    if n_categories < 2:
+        return
+    center = (n_categories - 1) / 2.0
+    shifts = {i: (i - center) * (spacing - 1.0) for i in range(n_categories)}
+
+    def _idx(x):
+        return max(0, min(n_categories - 1, int(round(x))))
+
+    # Collections: PathCollection (scatter/strip) shifts via offsets;
+    # PolyCollection (violins) shifts via path vertices. Mixing them caused
+    # double-shifts because PolyCollection.get_offsets() returns [[0,0]]
+    # by default rather than an empty array.
+    seen_paths = set()
+    for coll in ax.collections:
+        if isinstance(coll, PathCollection):
+            offsets = np.array(coll.get_offsets(), dtype=float)
+            if len(offsets) > 0:
+                for j in range(len(offsets)):
+                    if not np.isnan(offsets[j, 0]):
+                        offsets[j, 0] += shifts[_idx(offsets[j, 0])]
+                coll.set_offsets(offsets)
+        else:
+            for path in coll.get_paths():
+                if id(path) in seen_paths:
+                    continue
+                seen_paths.add(id(path))
+                v = path.vertices
+                if len(v):
+                    v[:, 0] += shifts[_idx(v[:, 0].mean())]
+
+    # Patches: the colored edge PathPatches share their path object with the
+    # underlying box (created via `box.get_path()`), so dedup by id(path) to
+    # avoid shifting the same box twice.
+    for patch in ax.patches:
+        path = patch.get_path()
+        if id(path) in seen_paths:
+            continue
+        seen_paths.add(id(path))
+        v = path.vertices
+        if len(v):
+            v[:, 0] += shifts[_idx(v[:, 0].mean())]
+
+    # Lines (whiskers, medians, caps, significance bars)
+    for line in ax.lines:
+        xd = np.asarray(line.get_xdata(), dtype=float)
+        if len(xd) == 0:
+            continue
+        line.set_xdata(xd + np.array([shifts[_idx(x)] for x in xd]))
+
+    # Texts in data coords (significance labels span two categories)
+    for txt in ax.texts:
+        if txt.get_transform() is ax.transData:
+            x, y = txt.get_position()
+            i_lo = max(0, min(n_categories - 1, int(np.floor(x))))
+            i_hi = max(0, min(n_categories - 1, int(np.ceil(x))))
+            if i_lo == i_hi:
+                shift = shifts[i_lo]
+            else:
+                frac = x - i_lo
+                shift = shifts[i_lo] * (1 - frac) + shifts[i_hi] * frac
+            txt.set_position((x + shift, y))
+
+    ax.set_xticks([i + shifts[i] for i in range(n_categories)])
+    half_extent = (n_categories - 1) * spacing / 2.0 + x_pad
+    ax.set_xlim(center - half_extent, center + half_extent)
+
+
 def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
                           palette=None, rotation=45, show_scatter=True,
                           figsize=(5, 6), scatter_size=4, scatter_alpha=0.6,
                           violin_width=0.7, box_width=0.35, jitter=0.15,
-                          show_pvalue=True, delta_label=None):
+                          show_pvalue=True, delta_label=None,
+                          group_spacing=1.0, x_pad=0.5):
     """
     Create a combined violin-box plot with optional scatter points.
 
@@ -159,6 +234,16 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
     delta_label : str or None, default None
         If given, annotate the plot with this string (e.g. "Cliff's δ = 0.42")
         in the top-left of the axes.
+    group_spacing : float, default 1.0
+        Distance between adjacent category centers, in data units. The default
+        1.0 matches seaborn's built-in behavior. Set to a value <1 (e.g. 0.8)
+        to reduce the gap between groups without shrinking the violins, boxes,
+        or scatter points themselves. Must remain > violin_width to avoid
+        overlap (default violin_width=0.7, so group_spacing>=0.75 is safe).
+    x_pad : float, default 0.5
+        Half-width of the empty margin on each side of the outermost category,
+        in data units. Independent of group_spacing — only controls outer
+        padding. Must be >= violin_width / 2 to avoid clipping edge violins.
     """
     plt.clf()
     fig, ax = plt.subplots(figsize=figsize)
@@ -340,6 +425,10 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
 
     if x_ticks is not None:
         plt.setp(ax.get_xticklabels(), rotation=rotation, ha='right')
+
+    _compress_group_spacing(ax, len(categories), group_spacing, x_pad=x_pad)
+    if x_ticks is not None:
+        ax.set_xticklabels(x_ticks, rotation=rotation, ha='right')
 
     plt.close()
     return fig

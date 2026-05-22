@@ -263,6 +263,8 @@ def plot_score_by_group(
     figsize=(5, 6),
     show_pvalue=True,
     delta_label=None,
+    group_spacing=1.0,
+    x_pad=0.5,
 ):
     """
     plot one pathway score across groups using the canonical violin-box combo.
@@ -285,6 +287,8 @@ def plot_score_by_group(
         figsize=figsize,
         show_pvalue=show_pvalue,
         delta_label=delta_label,
+        group_spacing=group_spacing,
+        x_pad=x_pad,
     )
     return plot_df, fig
 
