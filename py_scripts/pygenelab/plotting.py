@@ -2076,3 +2076,426 @@ def plot_sankey(
 
     return fig, ax
 
+
+# plot_chord
+def plot_chord(
+    data,
+    left_col,
+    right_col,
+    left_order=None,
+    right_order=None,
+    left_colors=None,
+    right_colors=None,
+    count_col=None,
+    title=None,
+    figsize=(9, 9),
+    inner_radius=1.0,
+    arc_width=0.08,
+    segment_gap_deg=2.0,
+    side_gap_deg=14.0,
+    alpha=0.55,
+    flow_color="left",
+    left_axis_label=None,
+    right_axis_label=None,
+    axis_label_fontsize=13,
+    axis_label_fontweight="bold",
+    segment_label_fontsize=10,
+    show_ticks=True,
+    tick_step=50,
+    tick_fontsize=7,
+    n_arc_pts=24,
+    default_color="#aaaaaa",
+):
+    """
+    plot a chord / circular sankey diagram from a long-format dataframe.
+
+    the left and right category sets sit on opposing semi-circular arcs;
+    ribbons through the center connect each left segment to each right
+    segment with width proportional to row counts (or ``count_col``).
+    arc segments carry tick marks of cumulative counts when ``show_ticks``
+    is True.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        long-format dataframe with at least ``left_col`` and ``right_col``.
+        if ``count_col`` is None, flow widths come from row counts; otherwise
+        from the ``count_col`` column.
+    left_col, right_col : str
+        column names mapped to the left and right arcs.
+    left_order, right_order : list or None
+        ordering of categories on each side. defaults to ``cat.categories``
+        for pandas Categorical, otherwise ``pd.unique()`` order.
+    left_colors, right_colors : dict or None
+        ``{category: color}`` per side. missing categories fall back to
+        ``default_color``.
+    count_col : str or None
+        precomputed count column. None to count rows.
+    title : str or None
+        figure title.
+    figsize : tuple
+        figure dimensions.
+    inner_radius : float
+        inner radius of the colored ring.
+    arc_width : float
+        radial width of the colored ring.
+    segment_gap_deg : float
+        gap between segments within one arc, in degrees.
+    side_gap_deg : float
+        gap between the two arcs (split symmetrically at top and bottom),
+        in degrees.
+    alpha : float
+        ribbon transparency.
+    flow_color : {"left", "right"}
+        which side's color is used for the ribbons.
+    left_axis_label, right_axis_label : str or None
+        bold labels placed at the midpoint of each arc (e.g. ``"DEGs"``,
+        ``"Genes"``).
+    show_ticks : bool
+        whether to render cumulative-count tick marks on each segment.
+    tick_step : int
+        spacing of tick marks along each segment, in count units.
+    n_arc_pts : int
+        number of line-segments used to approximate the inner arc per
+        ribbon endpoint.
+    default_color : str
+        fallback color for categories not present in the color dict.
+
+    Returns
+    -------
+    fig, ax : matplotlib Figure, Axes
+    """
+
+    # plot_chord
+    # api:
+    # fig, ax = plot_chord(
+    #     data=enrich_df,
+    #     left_col="fiber_type",        # e.g. "IIB" / "IIX"
+    #     right_col="category",         # e.g. "Metabolism", "Cellular Processes", ...
+    #     count_col="n_pathways",
+    #     left_axis_label="Fibers",
+    #     right_axis_label="Categories",
+    #     left_colors={"IIB": "#7e57c2", "IIX": "#ef9a9a"},
+    #     right_colors=category_palette,
+    #     title="Up-enriched pathways → categories",
+    # )
+
+    if flow_color not in ("left", "right"):
+        raise ValueError("flow_color must be 'left' or 'right'")
+
+    for col in (left_col, right_col):
+        if col not in data.columns:
+            raise ValueError(f"{col} was not found in data columns")
+
+    # build counts
+    if count_col is None:
+        df = (
+            data.groupby([left_col, right_col], observed=True)
+            .size()
+            .reset_index(name="count")
+        )
+        cnt_col = "count"
+    else:
+        if count_col not in data.columns:
+            raise ValueError(f"{count_col} was not found in data columns")
+        df = data[[left_col, right_col, count_col]].copy()
+        cnt_col = count_col
+
+    # default orders
+    def _default_order(col):
+        series = data[col]
+        if hasattr(series, "cat"):
+            return series.cat.categories.tolist()
+        return list(pd.unique(series))
+
+    if left_order is None:
+        left_order = _default_order(left_col)
+    if right_order is None:
+        right_order = _default_order(right_col)
+
+    # default colors
+    if left_colors is None:
+        tab = plt.cm.tab20.colors
+        left_colors = {g: tab[i % len(tab)] for i, g in enumerate(left_order)}
+    if right_colors is None:
+        tab = plt.cm.tab20.colors
+        right_colors = {
+            g: tab[(i + 10) % len(tab)] for i, g in enumerate(right_order)
+        }
+
+    # totals per category
+    left_totals = (
+        df.groupby(left_col, observed=True)[cnt_col].sum().to_dict()
+    )
+    right_totals = (
+        df.groupby(right_col, observed=True)[cnt_col].sum().to_dict()
+    )
+
+    # arc angular ranges (radians) — right half on the +x side, left half on -x
+    side_gap = np.deg2rad(side_gap_deg)
+    seg_gap = np.deg2rad(segment_gap_deg)
+
+    right_a0 = -np.pi / 2 + side_gap / 2
+    right_a1 = np.pi / 2 - side_gap / 2
+    right_span = right_a1 - right_a0
+
+    left_a0 = np.pi / 2 + side_gap / 2
+    left_a1 = 3 * np.pi / 2 - side_gap / 2
+    left_span = left_a1 - left_a0
+
+    def _segment_ranges(order, totals, a_start, a_span, gap):
+        n = len(order)
+        if n == 0:
+            return {}
+        available = a_span - max(n - 1, 0) * gap
+        total = sum(totals.get(g, 0) for g in order)
+        ranges = {}
+        cursor = a_start
+        for g in order:
+            cnt = totals.get(g, 0)
+            ang = (cnt / total) * available if total > 0 else 0.0
+            ranges[g] = (cursor, cursor + ang)
+            cursor += ang + gap
+        return ranges
+
+    left_ranges = _segment_ranges(
+        left_order, left_totals, left_a0, left_span, seg_gap
+    )
+    right_ranges = _segment_ranges(
+        right_order, right_totals, right_a0, right_span, seg_gap
+    )
+
+    # fill cursors track how much of each segment has been used by ribbons
+    left_fill = {g: left_ranges[g][0] for g in left_order}
+    right_fill = {g: right_ranges[g][0] for g in right_order}
+
+    # figure
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    lim = inner_radius + arc_width + 0.45
+    ax.set_xlim(-lim, lim)
+    ax.set_ylim(-lim, lim)
+
+    def _arc_pts(a, b, r, n):
+        angles = np.linspace(a, b, n)
+        return [(r * np.cos(t), r * np.sin(t)) for t in angles]
+
+    # stable ribbon stacking
+    df_sorted = df.copy()
+    df_sorted[left_col] = pd.Categorical(
+        df_sorted[left_col], categories=left_order, ordered=True
+    )
+    df_sorted[right_col] = pd.Categorical(
+        df_sorted[right_col], categories=right_order, ordered=True
+    )
+    df_sorted = df_sorted.sort_values([left_col, right_col])
+
+    r_in = inner_radius
+
+    # draw ribbons
+    for _, row in df_sorted.iterrows():
+        lg, rg, cnt = row[left_col], row[right_col], row[cnt_col]
+        lt = left_totals.get(lg, 0)
+        rt = right_totals.get(rg, 0)
+        if lt == 0 or rt == 0 or cnt is None or cnt == 0:
+            continue
+
+        l0, l1 = left_ranges[lg]
+        r0, r1 = right_ranges[rg]
+
+        la = (cnt / lt) * (l1 - l0)
+        ra = (cnt / rt) * (r1 - r0)
+
+        la0 = left_fill[lg]
+        la1 = la0 + la
+        ra0 = right_fill[rg]
+        ra1 = ra0 + ra
+        left_fill[lg] += la
+        right_fill[rg] += ra
+
+        # build a closed ribbon path:
+        #   1) line-approximated arc from la0 -> la1 on the inner radius
+        #   2) cubic Bezier through (0, 0) from la1 -> ra1
+        #   3) line-approximated arc from ra1 -> ra0
+        #   4) cubic Bezier through (0, 0) from ra0 -> la0
+        left_arc = _arc_pts(la0, la1, r_in, n_arc_pts)
+        right_arc = _arc_pts(ra1, ra0, r_in, n_arc_pts)
+
+        p_la0 = left_arc[0]
+        p_la1 = left_arc[-1]
+        p_ra1 = right_arc[0]
+        p_ra0 = right_arc[-1]
+
+        verts = [p_la0]
+        codes = [Path.MOVETO]
+
+        for p in left_arc[1:]:
+            verts.append(p)
+            codes.append(Path.LINETO)
+
+        # cubic bezier la1 -> ra1, both controls at origin
+        verts.extend([(0.0, 0.0), (0.0, 0.0), p_ra1])
+        codes.extend([Path.CURVE4, Path.CURVE4, Path.CURVE4])
+
+        for p in right_arc[1:]:
+            verts.append(p)
+            codes.append(Path.LINETO)
+
+        # cubic bezier ra0 -> la0, both controls at origin
+        verts.extend([(0.0, 0.0), (0.0, 0.0), p_la0])
+        codes.extend([Path.CURVE4, Path.CURVE4, Path.CURVE4])
+
+        # explicit close
+        verts.append(p_la0)
+        codes.append(Path.CLOSEPOLY)
+
+        path = Path(verts, codes)
+
+        if flow_color == "left":
+            face = left_colors.get(lg, default_color)
+        else:
+            face = right_colors.get(rg, default_color)
+
+        ribbon = patches.PathPatch(
+            path,
+            facecolor=face,
+            edgecolor="none",
+            alpha=alpha,
+            zorder=1,
+        )
+        ax.add_patch(ribbon)
+
+    # draw colored arc segments as wedges
+    def _wedge(a_start, a_end, r, w, color):
+        return patches.Wedge(
+            center=(0, 0),
+            r=r + w,
+            theta1=np.rad2deg(a_start),
+            theta2=np.rad2deg(a_end),
+            width=w,
+            facecolor=color,
+            edgecolor="white",
+            linewidth=0.5,
+            zorder=3,
+        )
+
+    for g in left_order:
+        a0, a1 = left_ranges[g]
+        if a1 > a0:
+            ax.add_patch(
+                _wedge(a0, a1, r_in, arc_width, left_colors.get(g, default_color))
+            )
+
+    for g in right_order:
+        a0, a1 = right_ranges[g]
+        if a1 > a0:
+            ax.add_patch(
+                _wedge(a0, a1, r_in, arc_width, right_colors.get(g, default_color))
+            )
+
+    # segment labels outside the ring
+    r_label = r_in + arc_width + 0.10
+
+    def _segment_label(angle, text, side):
+        x = r_label * np.cos(angle)
+        y = r_label * np.sin(angle)
+        ha = "left" if side == "right" else "right"
+        ax.text(
+            x, y, str(text),
+            ha=ha, va="center",
+            fontsize=segment_label_fontsize,
+        )
+
+    for g in left_order:
+        a0, a1 = left_ranges[g]
+        if a1 > a0:
+            _segment_label((a0 + a1) / 2, g, side="left")
+
+    for g in right_order:
+        a0, a1 = right_ranges[g]
+        if a1 > a0:
+            _segment_label((a0 + a1) / 2, g, side="right")
+
+    # axis (side) labels at midpoint of each half
+    r_axis = r_in + arc_width + 0.32
+
+    if left_axis_label is not None:
+        am = (left_a0 + left_a1) / 2
+        ax.text(
+            r_axis * np.cos(am),
+            r_axis * np.sin(am),
+            left_axis_label,
+            ha="right",
+            va="center",
+            fontsize=axis_label_fontsize,
+            fontweight=axis_label_fontweight,
+        )
+
+    if right_axis_label is not None:
+        am = (right_a0 + right_a1) / 2
+        ax.text(
+            r_axis * np.cos(am),
+            r_axis * np.sin(am),
+            right_axis_label,
+            ha="left",
+            va="center",
+            fontsize=axis_label_fontsize,
+            fontweight=axis_label_fontweight,
+        )
+
+    # cumulative-count tick marks per segment
+    if show_ticks and tick_step is not None and tick_step > 0:
+        r_tick_in = r_in + arc_width
+        r_tick_out = r_in + arc_width + 0.035
+        r_tick_text = r_in + arc_width + 0.075
+
+        for order, ranges, totals in (
+            (left_order, left_ranges, left_totals),
+            (right_order, right_ranges, right_totals),
+        ):
+            for g in order:
+                a0, a1 = ranges[g]
+                tot = totals.get(g, 0)
+                if tot <= 0 or a1 <= a0:
+                    continue
+                span = a1 - a0
+                n_ticks = int(np.floor(tot / tick_step)) + 1
+                for k in range(n_ticks):
+                    val = k * tick_step
+                    if val > tot:
+                        continue
+                    frac = val / tot
+                    ang = a0 + frac * span
+                    x0 = r_tick_in * np.cos(ang)
+                    y0 = r_tick_in * np.sin(ang)
+                    x1 = r_tick_out * np.cos(ang)
+                    y1 = r_tick_out * np.sin(ang)
+                    ax.plot(
+                        [x0, x1], [y0, y1],
+                        color="black",
+                        linewidth=0.5,
+                        zorder=4,
+                    )
+                    rot_deg = np.rad2deg(ang) - 90
+                    if rot_deg > 90:
+                        rot_deg -= 180
+                    elif rot_deg < -90:
+                        rot_deg += 180
+                    ax.text(
+                        r_tick_text * np.cos(ang),
+                        r_tick_text * np.sin(ang),
+                        str(val),
+                        ha="center",
+                        va="center",
+                        fontsize=tick_fontsize,
+                        rotation=rot_deg,
+                    )
+
+    if title is not None:
+        ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
+
+    plt.tight_layout()
+
+    return fig, ax
+
