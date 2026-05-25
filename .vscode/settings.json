@@ -1,0 +1,10 @@
+{
+  "emeraldwalk.runonsave": {
+    "commands": [
+      {
+        "match": "manuscript/.*\\.tex$",
+        "cmd": "bash -lc 'source /etc/profile.d/lmod.sh && module load pandoc/3.7.0.2 && pandoc \"${file}\" -o \"${fileDirname}/${fileBasenameNoExtension}.docx\" && echo \"[run-on-save] rebuilt ${fileBasenameNoExtension}.docx\"'"
+      }
+    ]
+  }
+}

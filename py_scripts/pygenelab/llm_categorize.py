@@ -26,7 +26,7 @@ PATHWAY_TOP_CATEGORIES = [
     "Environmental Information Processing",
     "Cellular Processes",
     "Organismal Systems",
-    "Human Diseases",
+    "Cancer related",
     "Other",
 ]
 
@@ -75,9 +75,15 @@ _SYSTEM_TEMPLATE = (
     "- Cellular Processes: cell cycle, apoptosis, autophagy, cytoskeleton, "
     "motility, vesicle trafficking, cell adhesion/junctions, senescence.\n"
     "- Organismal Systems: immune, nervous, endocrine, circulatory, digestive, "
-    "muscular, skeletal, reproductive, sensory, development.\n"
-    "- Human Diseases: cancer, neurodegeneration, infections, metabolic disease, "
-    "cardiovascular disease, immune disease pathways named after a disease.\n"
+    "muscular, skeletal, reproductive, sensory, development. Non-cancer "
+    "disease-named pathways (neurodegeneration, infections, cardiovascular, "
+    "immune disease) also belong here — this is a mouse dataset, so do NOT "
+    "emit a 'Human Diseases' bucket.\n"
+    "- Cancer related: pathways whose name references cancer, tumor, oncogene, "
+    "or a specific malignancy (e.g. KEGG_PATHWAYS_IN_CANCER, "
+    "HALLMARK_P53_PATHWAY when framed as tumor suppression, WP_GLIOBLASTOMA_*, "
+    "KEGG_SMALL_CELL_LUNG_CANCER, REACTOME_SIGNALING_BY_*_IN_CANCER). Use this "
+    "instead of Human Diseases whenever the name is cancer/tumor-specific.\n"
     "- Other: only when no category fits.\n\n"
     "Output requirement: respond with a single JSON object mapping each given "
     "pathway name (verbatim, as provided) to exactly one category string from "

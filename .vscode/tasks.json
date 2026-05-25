@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build manuscript DOCX (current .tex)",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "source /etc/profile.d/lmod.sh && module load pandoc/3.7.0.2 && pandoc \"${file}\" -o \"${fileDirname}/${fileBasenameNoExtension}.docx\""
+      ],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

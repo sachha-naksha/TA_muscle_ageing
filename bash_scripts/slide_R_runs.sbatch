@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=male_slide_cv
-#SBATCH --output=male_cv_2.log
+#SBATCH --job-name=female_final_cv
+#SBATCH --output=female_cv_3.log
 #SBATCH --time=10-00:00:00
 #SBATCH --ntasks=1
 #SBATCH --mem=64G

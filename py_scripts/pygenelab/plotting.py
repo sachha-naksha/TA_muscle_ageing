@@ -1862,6 +1862,15 @@ def plot_sankey(
     left_label_fontweight="bold",
     flow_color="left",
     default_color="#aaaaaa",
+    show_counts=False,
+    count_fontsize=8,
+    left_gap=0.004,
+    right_gap=0.004,
+    left_group_gap=None,
+    left_group_indices=None,
+    right_group_gap=None,
+    right_group_indices=None,
+    flow_pad=0.0,
 ):
     """
     plot a two-column sankey diagram from a long-format dataframe
@@ -1893,6 +1902,26 @@ def plot_sankey(
         which side's color is used for the ribbons.
     default_color : str
         fallback color for categories not present in the color dict.
+    show_counts : bool
+        if True, draw the per-segment count between each side's bar and its
+        category label so flow widths can be read off directly.
+    count_fontsize : int
+        font size for the per-segment count labels when ``show_counts`` is True.
+    left_gap, right_gap : float
+        baseline vertical gap (in axes units) between adjacent stacked bars on
+        each side. Bar heights are shrunk to keep the total stack within the
+        plotting band.
+    left_group_gap, right_group_gap : float or None
+        larger vertical gap used at sub-group boundaries. Falls back to
+        ``left_gap`` / ``right_gap`` when None.
+    left_group_indices, right_group_indices : iterable[int] or None
+        indices ``i`` where the gap *after* category ``i`` should use the
+        larger ``*_group_gap`` (e.g. ``[1]`` puts the big gap between the 2nd
+        and 3rd left-bar categories). All other gaps use ``*_gap``.
+    flow_pad : float
+        horizontal padding (in axes units) between each bar's inner edge and
+        where the ribbon curves start/end — adds visible whitespace between
+        the bars and the flow.
     """
 
     # plot_sankey
@@ -1949,26 +1978,41 @@ def plot_sankey(
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    gap = 0.008
+    # per-side gap arrays of length N-1, with the larger group_gap inserted
+    # at the boundaries listed in *_group_indices.
+    def _build_gaps(order, gap, group_gap, group_indices):
+        n = len(order)
+        if n <= 1:
+            return []
+        big = gap if group_gap is None else group_gap
+        idx_set = set(group_indices) if group_indices is not None else set()
+        return [big if i in idx_set else gap for i in range(n - 1)]
 
-    # stacked-bar positions
-    def _calc_positions(groups, counts_dict):
+    left_gaps = _build_gaps(left_order, left_gap, left_group_gap, left_group_indices)
+    right_gaps = _build_gaps(right_order, right_gap, right_group_gap, right_group_indices)
+
+    # stacked-bar positions; bars are shrunk to fit (0.9 - sum_of_gaps) so
+    # larger gaps don't push the stack past the axis top.
+    def _calc_positions(groups, counts_dict, gaps):
         total = sum(counts_dict.get(g, 0) for g in groups)
-        positions = {}
         y = 0.05
         if total == 0:
             return {g: (y, y) for g in groups}
-        for g in groups:
-            h = (counts_dict.get(g, 0) / total) * 0.9
+        available = max(0.9 - sum(gaps), 0.1)
+        positions = {}
+        for i, g in enumerate(groups):
+            h = (counts_dict.get(g, 0) / total) * available
             positions[g] = (y, y + h)
-            y += h + gap * 0.5
+            y += h
+            if i < len(groups) - 1:
+                y += gaps[i]
         return positions
 
     left_totals = df.groupby(left_col, observed=True)["count"].sum().to_dict()
     right_totals = df.groupby(right_col, observed=True)["count"].sum().to_dict()
 
-    left_pos = _calc_positions(left_order, left_totals)
-    right_pos = _calc_positions(right_order, right_totals)
+    left_pos = _calc_positions(left_order, left_totals, left_gaps)
+    right_pos = _calc_positions(right_order, right_totals, right_gaps)
 
     # draw flows
     left_fill = {g: left_pos[g][0] for g in left_order}
@@ -2006,17 +2050,19 @@ def plot_sankey(
         left_fill[lg] += lh
         right_fill[rg] += rh
 
-        mid_x = (x_left + bar_width + x_right) / 2
+        flow_start = x_left + bar_width + flow_pad
+        flow_end = x_right - flow_pad
+        mid_x = (flow_start + flow_end) / 2
         verts = [
-            (x_left + bar_width, ly0),
+            (flow_start, ly0),
             (mid_x, ly0),
             (mid_x, ry0),
-            (x_right, ry0),
-            (x_right, ry1),
+            (flow_end, ry0),
+            (flow_end, ry1),
             (mid_x, ry1),
             (mid_x, ly1),
-            (x_left + bar_width, ly1),
-            (x_left + bar_width, ly0),
+            (flow_start, ly1),
+            (flow_start, ly0),
         ]
         codes = [
             Path.MOVETO,
@@ -2042,6 +2088,13 @@ def plot_sankey(
         ax.add_patch(patch)
 
     # draw bars
+    # When show_counts is on, count sits flush against the bar and the
+    # category label is pushed outward to leave room for it.
+    left_count_pad = 0.005
+    left_label_pad = 0.045 if show_counts else 0.01
+    right_count_pad = 0.005
+    right_label_pad = 0.045 if show_counts else 0.01
+
     for g in left_order:
         y0, y1 = left_pos[g]
         ax.add_patch(plt.Rectangle(
@@ -2050,11 +2103,19 @@ def plot_sankey(
             zorder=2, linewidth=0,
         ))
         ax.text(
-            x_left - 0.01, (y0 + y1) / 2, str(g),
+            x_left - left_label_pad, (y0 + y1) / 2, str(g),
             ha="right", va="center",
             fontsize=left_label_fontsize,
             fontweight=left_label_fontweight,
         )
+        if show_counts:
+            ax.text(
+                x_left - left_count_pad, (y0 + y1) / 2,
+                f"{int(left_totals.get(g, 0))}",
+                ha="right", va="center",
+                fontsize=count_fontsize,
+                color="#333333",
+            )
 
     for g in right_order:
         y0, y1 = right_pos[g]
@@ -2064,10 +2125,18 @@ def plot_sankey(
             zorder=2, linewidth=0,
         ))
         ax.text(
-            x_right + bar_width + 0.01, (y0 + y1) / 2, str(g),
+            x_right + bar_width + right_label_pad, (y0 + y1) / 2, str(g),
             ha="left", va="center",
             fontsize=right_label_fontsize,
         )
+        if show_counts:
+            ax.text(
+                x_right + bar_width + right_count_pad, (y0 + y1) / 2,
+                f"{int(right_totals.get(g, 0))}",
+                ha="left", va="center",
+                fontsize=count_fontsize,
+                color="#333333",
+            )
 
     if title is not None:
         ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
