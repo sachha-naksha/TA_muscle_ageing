@@ -13,6 +13,7 @@ from .utils import *
 from .geneset_activity import *
 from .deg_functional_enrichment import *
 from .transcriptional_noise import *
+from .LF_viz import *
 from .llm_categorize import (
     PATHWAY_TOP_CATEGORIES,
     strip_pathway_label,
