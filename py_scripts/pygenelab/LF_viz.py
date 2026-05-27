@@ -433,6 +433,79 @@ def _edge_rgba(base_color, rs, min_alpha, max_alpha):
     return [(r0, g0, b0, min(max_alpha, min_alpha + span * abs(r))) for r in rs]
 
 
+def _resolve_overlaps(pos, node_size, ax, padding=1.25,
+                      n_iters=400, step=0.6):
+    """Push apart nodes that overlap in display coordinates.
+
+    networkx layouts ignore the visual size of the rendered markers, so for
+    dense networks with large node_size the nodes routinely overlap even
+    when the abstract positions are well-spaced. This iteratively bumps any
+    pair of nodes that are within `padding * (r_i + r_j)` of each other in
+    pixel space, then converts back to data coords. Runs in O(n^2) per
+    iteration which is fine for n <~ 100.
+
+    Parameters
+    ----------
+    pos : dict[node -> (x, y)]
+        Layout positions in data coords. Mutated in place and returned.
+    node_size : float
+        matplotlib marker area in points^2 (same value passed to
+        draw_networkx_nodes). Marker radius = sqrt(node_size / pi) points.
+    ax : matplotlib.axes.Axes
+        Axes with x/ylim already set (transData needs realized view limits).
+    padding : float
+        Multiplier on combined radii; >1 leaves a visible gap between nodes.
+    n_iters : int
+        Max iterations; early-exits when no overlap remains.
+    step : float
+        Fraction of overlap corrected per iteration (<=1 damps oscillation).
+    """
+    nodes = list(pos.keys())
+    if len(nodes) < 2:
+        return pos
+
+    fig = ax.figure
+    # marker radius in pixels: node_size is points^2, 1 pt = dpi/72 px.
+    r_pix = np.sqrt(node_size / np.pi) * fig.dpi / 72.0 * padding
+    min_sep = 2.0 * r_pix
+
+    coords = np.array([pos[n] for n in nodes], dtype=float)
+    rng = np.random.default_rng(0)
+
+    for _ in range(n_iters):
+        disp = ax.transData.transform(coords)
+        diff = disp[:, None, :] - disp[None, :, :]
+        d = np.linalg.norm(diff, axis=2)
+        np.fill_diagonal(d, np.inf)
+        if d.min() >= min_sep:
+            break
+
+        delta = np.zeros_like(disp)
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                dij = d[i, j]
+                if dij >= min_sep:
+                    continue
+                if dij < 1e-9:
+                    # coincident nodes: random unit kick so the next pass
+                    # has a direction to push along.
+                    u = rng.normal(size=2)
+                    u /= np.linalg.norm(u) + 1e-12
+                    overlap = min_sep
+                else:
+                    u = diff[i, j] / dij
+                    overlap = min_sep - dij
+                push = step * overlap / 2.0
+                delta[i] += u * push
+                delta[j] -= u * push
+
+        coords = ax.transData.inverted().transform(disp + delta)
+
+    for k, n in enumerate(nodes):
+        pos[n] = (coords[k, 0], coords[k, 1])
+    return pos
+
+
 def plot_lf_correlation_network(
     x,
     feature_list,
@@ -440,8 +513,8 @@ def plot_lf_correlation_network(
     latent_factor,
     out_dir,
     minimum=0.25,
-    repulsion=2.0,
-    iterations=300,
+    repulsion=6.0,
+    iterations=800,
     layout="spring",            # "spring" | "kamada_kawai" | "circular"
     figsize=(9, 7),
     node_size=1400,
@@ -453,10 +526,11 @@ def plot_lf_correlation_network(
     high_y_color=_HIGH_Y_COLOR,
     low_y_color=_LOW_Y_COLOR,
     neutral_color=_NEUTRAL_COLOR,
-    filetype="pdf",
-    also_svg=True,
+    filetype="svg",
+    also_svg=False,
     seed=1,
     show=True,
+    overlap_padding=1.25,
 ):
     """Plot a qgraph-style correlation network for one SLIDE latent factor.
 
@@ -477,9 +551,9 @@ def plot_lf_correlation_network(
         Drop edges with |Spearman r| below this threshold (qgraph minimum).
     repulsion : float
         Spring-layout repulsion. Spread is set by k = repulsion / sqrt(n_nodes);
-        higher = more spread. Default 2.0 gives a layout that avoids overlap for
-        ~10-30 node networks. The qgraph default of 0.1 produces clumped layouts
-        in networkx (k ~ 0.02) and should not be used here.
+        higher = more spread. Default 6.0 yields a well-separated initial
+        layout for ~10-30 node correlation networks. Note: the qgraph default
+        of 0.1 produces severely clumped layouts in networkx (k ~ 0.02).
     iterations : int
         Number of spring-layout iterations (more = better convergence).
     layout : {"spring", "kamada_kawai", "circular"}
@@ -494,9 +568,12 @@ def plot_lf_correlation_network(
         Node colors for genes UP with high-Y class, UP with low-Y class, and
         neutral. Pass SEX_CONDITION_PALETTE[(sex, 'KO')] and [(sex, 'WT')]
         to make node colors match the rest of the notebook's color scheme.
+    filetype : str
+        Output extension. Defaults to "svg" so the saved file is the
+        editable-text SVG (svg.fonttype="none") used in Illustrator.
     also_svg : bool
-        In addition to <out_dir>/<LF>.<filetype>, also save an editable-text
-        SVG sibling (svg.fonttype="none") for Illustrator polish.
+        If filetype != "svg", optionally save an additional SVG sibling.
+        Off by default since the primary output is already SVG.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -541,22 +618,67 @@ def plot_lf_correlation_network(
                 neg_rs.append(r)
 
     # --- Layout -------------------------------------------------------
+    # Important: pass weight=None to every layout. The graph carries the
+    # correlation r as edge `weight`, which networkx interprets as an
+    # ATTRACTIVE spring strength -- so strongly correlated genes get pulled
+    # right on top of each other. We only want the topology to influence
+    # spacing, not the correlation magnitude (edge thickness already carries
+    # |r|).
     n = len(genes)
     if layout == "kamada_kawai" and G.number_of_edges() > 0:
-        pos = nx.kamada_kawai_layout(G)
+        pos = nx.kamada_kawai_layout(G, weight=None, scale=1.5)
     elif layout == "circular":
-        pos = nx.circular_layout(G)
+        pos = nx.circular_layout(G, scale=1.5)
     else:
-        # spring (Fruchterman-Reingold). k controls ideal node spacing.
-        # networkx default k = 1/sqrt(n) ~ 0.23 for n=19; we scale that up
-        # by `repulsion` so the user has a single intuitive knob.
+        # spring (Fruchterman-Reingold). k is the ideal node spacing in
+        # layout coords. networkx default k = 1/sqrt(n); we scale by
+        # `repulsion` so a single knob controls overall spread.
         k = repulsion / np.sqrt(max(n, 1))
         pos = nx.spring_layout(
-            G, k=k, iterations=iterations, seed=seed, scale=1.5
+            G, k=k, iterations=iterations, seed=seed, scale=1.5,
+            weight=None,
         )
 
     # --- Draw ---------------------------------------------------------
     fig, ax = plt.subplots(figsize=figsize)
+
+    # Set equal aspect first so 1 data unit in x == 1 data unit in y in
+    # pixels (required for the pixel-based overlap resolver). Use
+    # adjustable="datalim" so the axes fill the entire figure and the data
+    # range stretches to match the figure aspect -- adjustable="box" would
+    # shrink the axes to a square inside the figure, wasting space.
+    ax.set_aspect("equal", adjustable="datalim")
+
+    xs = np.array([p[0] for p in pos.values()])
+    ys = np.array([p[1] for p in pos.values()])
+    span = max(np.ptp(xs), np.ptp(ys), 1e-6)
+    cx, cy = 0.5 * (xs.min() + xs.max()), 0.5 * (ys.min() + ys.max())
+    half = 0.5 * span * 1.18  # ~18% breathing room around layout centers
+    ax.set_xlim(cx - half, cx + half)
+    ax.set_ylim(cy - half, cy + half)
+
+    # Hard guarantee no two nodes visibly touch: bump apart any pair that
+    # overlaps in display (pixel) coordinates based on actual node_size.
+    pos = _resolve_overlaps(pos, node_size, ax, padding=overlap_padding)
+
+    # Refit axis limits so every node MARKER (not just its center) fits
+    # inside the axes with a label-sized buffer. Without this, a node whose
+    # center lands near the boundary -- or that got pushed there by the
+    # overlap resolver -- has its circle clipped at the edge of the plot.
+    xs = np.array([p[0] for p in pos.values()])
+    ys = np.array([p[1] for p in pos.values()])
+    # marker radius in data coords: convert pixels -> data via transData
+    r_pix = np.sqrt(node_size / np.pi) * fig.dpi / 72.0
+    origin = ax.transData.inverted().transform((0, 0))
+    one_pix = ax.transData.inverted().transform((1, 0))
+    data_per_pix = abs(one_pix[0] - origin[0])
+    r_data = r_pix * data_per_pix
+    # label buffer: ~font_size points tall, plus a constant margin.
+    label_buf = font_size * fig.dpi / 72.0 * data_per_pix * 1.5
+    pad = r_data + label_buf
+    ax.set_xlim(xs.min() - pad, xs.max() + pad)
+    ax.set_ylim(ys.min() - pad, ys.max() + pad)
+
     if neg_edges:
         nx.draw_networkx_edges(
             G, pos, edgelist=neg_edges, ax=ax,
@@ -586,7 +708,9 @@ def plot_lf_correlation_network(
 
     ax.set_title(latent_factor, fontsize=12, fontweight="bold")
     ax.set_axis_off()
-    ax.margins(0.12)        # breathing room so outer nodes aren't clipped
+    # Note: axis limits were pinned before the overlap resolver ran, so we
+    # don't add ax.margins() here -- that would relax those limits and the
+    # resolver's pixel-radius math would no longer match the saved figure.
     plt.tight_layout()
 
     out_path = out_dir / f"{latent_factor}.{filetype}"
