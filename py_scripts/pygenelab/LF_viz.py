@@ -23,7 +23,6 @@ from matplotlib.lines import Line2D
 # that uses these plotting utils gets consistent typography without boilerplate.
 mpl.rcParams.update({
     "svg.fonttype":      "none",
-    "pdf.fonttype":      42,
     "ps.fonttype":       42,
     "font.family":       "sans-serif",
     "font.sans-serif":   ["Arial", "Helvetica", "DejaVu Sans"],
@@ -283,11 +282,12 @@ def plot_lf_aloading_pathway_bar(
     fig, ax = plt.subplots(figsize=figsize)
 
     for xi, pw in enumerate(pathway_order):
-        sub = (df[df["pathway"] == pw]
-               .sort_values("A_loading", ascending=True))
+        # Preserve original file order; iterate in reverse so the row that
+        # appears first in the file is stacked LAST and sits on top.
+        sub = df[df["pathway"] == pw]
         bottom = 0.0
         c = palette[pw]
-        for _, row in sub.iterrows():
+        for _, row in sub.iloc[::-1].iterrows():
             h = row["A_loading"]
             ax.bar(xi, h, bottom=bottom,
                    color=c, edgecolor="white",
@@ -349,6 +349,5 @@ def plot_lf_aloading_pathway_bar(
     out_path = (f"{figures_dir}/{latent_factor}{suffix}"
                 "_Aloading_pathway_bar.svg")
     plt.savefig(out_path, bbox_inches="tight")
-    plt.savefig(out_path.replace(".svg", ".pdf"), bbox_inches="tight")
     plt.show()
     return out_path
