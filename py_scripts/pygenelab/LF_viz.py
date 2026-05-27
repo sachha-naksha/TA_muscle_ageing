@@ -12,11 +12,18 @@ together with a pathway_map (gene -> pathway) and a palette (pathway -> hex).
 SVGs are saved with editable text (svg.fonttype = "none") into figures_dir.
 """
 
+import os
+import re
+from pathlib import Path
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+from scipy.stats import spearmanr
+from sklearn.metrics import roc_auc_score
 
 
 # Nature-style + Illustrator-editable text. Applied at import so any notebook
@@ -351,3 +358,215 @@ def plot_lf_aloading_pathway_bar(
     plt.savefig(out_path, bbox_inches="tight")
     plt.show()
     return out_path
+
+
+# ---------------------------------------------------------------------------
+# SLIDE-style correlation networks (port of R plotCorrelationNetworks /
+# qgraph::qgraph). One network per latent factor: nodes = genes in the LF,
+# edge weight = pairwise Spearman r between genes (filtered by |r| >=
+# minimum). Node color encodes each gene's relationship to y; edge color
+# encodes the sign of the gene-gene correlation.
+# ---------------------------------------------------------------------------
+
+_POS_EDGE_COLOR = "#40006D"  # qgraph posCol
+_NEG_EDGE_COLOR = "#59A14F"  # qgraph negCol
+_HIGH_Y_COLOR   = "salmon"   # gene up with high y / class 1
+_LOW_Y_COLOR    = "skyblue"  # gene up with low  y / class 0
+_NEUTRAL_COLOR  = "lightgray"
+
+
+def _node_colors_from_y(x_gene, y):
+    """Color each gene by its association with y.
+
+    Binary y -> AUC of the gene as a predictor (>0.5 salmon, <0.5 skyblue).
+    Continuous y -> Spearman r (>0 salmon, <0 skyblue). Mirrors the R code's
+    glmnet::auc / cor(method="spearman") branch.
+    """
+    y = np.asarray(y).ravel()
+    uniq = np.unique(y[~pd.isna(y)])
+    colors = []
+    if uniq.size == 2:
+        y_bin = (y == uniq.max()).astype(int)
+        for g in x_gene.columns:
+            xs = np.asarray(x_gene[g])
+            mask = ~(np.isnan(xs) | np.isnan(y_bin.astype(float)))
+            if mask.sum() < 2 or len(np.unique(y_bin[mask])) < 2:
+                colors.append(_NEUTRAL_COLOR)
+                continue
+            a = roc_auc_score(y_bin[mask], xs[mask])
+            colors.append(_HIGH_Y_COLOR if a > 0.5
+                          else _LOW_Y_COLOR if a < 0.5
+                          else _NEUTRAL_COLOR)
+    else:
+        for g in x_gene.columns:
+            xs = np.asarray(x_gene[g])
+            mask = ~(np.isnan(xs) | np.isnan(y.astype(float)))
+            if mask.sum() < 3:
+                colors.append(_NEUTRAL_COLOR)
+                continue
+            r = spearmanr(y[mask], xs[mask]).statistic
+            colors.append(_HIGH_Y_COLOR if r > 0
+                          else _LOW_Y_COLOR if r < 0
+                          else _NEUTRAL_COLOR)
+    return colors
+
+
+def plot_lf_correlation_network(
+    x,
+    feature_list,
+    y,
+    latent_factor,
+    out_dir,
+    minimum=0.25,
+    repulsion=0.1,
+    figsize=(7, 5),
+    node_size=900,
+    font_size=8,
+    max_edge_width=4.0,
+    filetype="pdf",
+    seed=1,
+    show=True,
+):
+    """Plot a qgraph-style correlation network for one SLIDE latent factor.
+
+    Parameters
+    ----------
+    x : pd.DataFrame
+        Sample x gene expression matrix (rows samples, columns genes).
+    feature_list : pd.DataFrame
+        Must contain a 'names' column listing genes in this LF (matches
+        SLIDE's feature_list_Z*.txt / gene_list_Z*.txt).
+    y : array-like
+        Response vector (binary or continuous), aligned with rows of x.
+    latent_factor : str
+        Name used for the plot title and output filename (e.g. "Z12").
+    out_dir : str | Path
+        Directory the figure is written to (created if missing).
+    minimum : float
+        Drop edges with |Spearman r| below this threshold (qgraph minimum).
+    repulsion : float
+        Spring-layout repulsion multiplier; lower = more spread. Mapped to
+        networkx spring_layout `k = repulsion / sqrt(n_nodes)`.
+    max_edge_width : float
+        Width of an edge with |r| = 1; widths scale linearly with |r|.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    genes = [g for g in feature_list["names"].dropna().tolist()
+             if g in x.columns]
+    if len(genes) < 2:
+        print(f"[{latent_factor}] <2 genes overlap with x; skipping.")
+        return None
+
+    x_gene = x.loc[:, genes].astype(float)
+    node_colors = _node_colors_from_y(x_gene, y)
+
+    # Spearman correlation matrix across genes.
+    corr = x_gene.corr(method="spearman").values
+    np.fill_diagonal(corr, 0.0)
+
+    G = nx.Graph()
+    G.add_nodes_from(range(len(genes)))
+    pos_edges, neg_edges = [], []
+    pos_widths, neg_widths = [], []
+    for i in range(len(genes)):
+        for j in range(i + 1, len(genes)):
+            r = corr[i, j]
+            if np.isnan(r) or abs(r) < minimum:
+                continue
+            G.add_edge(i, j, weight=r)
+            w = max_edge_width * abs(r)
+            if r >= 0:
+                pos_edges.append((i, j)); pos_widths.append(w)
+            else:
+                neg_edges.append((i, j)); neg_widths.append(w)
+
+    k = repulsion / np.sqrt(max(len(genes), 1))
+    pos = nx.spring_layout(G, k=k, seed=seed)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    if neg_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=neg_edges, ax=ax,
+                               width=neg_widths, edge_color=_NEG_EDGE_COLOR,
+                               alpha=0.85)
+    if pos_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=pos_edges, ax=ax,
+                               width=pos_widths, edge_color=_POS_EDGE_COLOR,
+                               alpha=0.85)
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_size,
+                           node_color=node_colors, node_shape="o",
+                           edgecolors="black", linewidths=0.6)
+    nx.draw_networkx_labels(G, pos, ax=ax,
+                            labels={i: g for i, g in enumerate(genes)},
+                            font_size=font_size)
+
+    ax.set_title(latent_factor)
+    ax.set_axis_off()
+    plt.tight_layout()
+
+    out_path = out_dir / f"{latent_factor}.{filetype}"
+    plt.savefig(out_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    return str(out_path)
+
+
+_RUN_DIR_RE = re.compile(r"(\d+\.?\d*_\d+\.?\d*_out|_out)$")
+_LF_FILE_RE = re.compile(r"(feature_list_Z\d+|gene_list_Z\d+)")
+_LF_NUM_RE  = re.compile(r"Z\d+")
+
+
+def plot_correlation_networks(input_params, minimum=0.25, **kwargs):
+    """Python port of R `plotCorrelationNetworks`.
+
+    Walks `input_params['out_path']` for SLIDE run directories matching
+    `*_out`, then for each `feature_list_Z*` / `gene_list_Z*` file writes a
+    correlation-network PDF into `<run_dir>/correlation_networks/`.
+
+    `input_params` is a dict with keys:
+        out_path : str   parent dir holding one or more *_out run dirs
+        x_path   : str   CSV of expression (rows=samples, cols=genes;
+                         first column = sample IDs)
+        y_path   : str   CSV of response (rows=samples; first column = ID)
+
+    Extra kwargs are forwarded to `plot_lf_correlation_network`.
+    """
+    out_root = input_params["out_path"]
+
+    run_dirs = [os.path.join(out_root, d) for d in os.listdir(out_root)
+                if os.path.isdir(os.path.join(out_root, d))
+                and _RUN_DIR_RE.search(d)]
+    if not run_dirs:
+        run_dirs = [out_root]
+
+    x = pd.read_csv(input_params["x_path"], index_col=0)
+    x.columns = x.columns.str.replace(" ", "_", regex=False)
+    y = pd.read_csv(input_params["y_path"], index_col=0).iloc[:, 0].values
+
+    written = []
+    for r in run_dirs:
+        net_dir = os.path.join(r, "correlation_networks")
+        feature_files = [os.path.join(r, f) for f in os.listdir(r)
+                         if _LF_FILE_RE.search(f)]
+        if not feature_files:
+            print(f"[{r}] no feature lists found; run optimizeSLIDE first.")
+            continue
+        for f in feature_files:
+            m = _LF_NUM_RE.search(os.path.basename(f))
+            if not m:
+                continue
+            lf_num = m.group(0)
+            fl = pd.read_csv(f, sep=r"\s+").dropna()
+            path = plot_lf_correlation_network(
+                x, fl, y,
+                latent_factor=lf_num,
+                out_dir=net_dir,
+                minimum=minimum,
+                **kwargs,
+            )
+            if path is not None:
+                written.append(path)
+    return written
