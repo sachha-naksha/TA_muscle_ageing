@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+from matplotlib.colors import to_rgba
 from matplotlib.lines import Line2D
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
@@ -375,12 +376,22 @@ _LOW_Y_COLOR    = "skyblue"  # gene up with low  y / class 0
 _NEUTRAL_COLOR  = "lightgray"
 
 
-def _node_colors_from_y(x_gene, y):
+def _node_colors_from_y(
+    x_gene,
+    y,
+    high_y_color=_HIGH_Y_COLOR,
+    low_y_color=_LOW_Y_COLOR,
+    neutral_color=_NEUTRAL_COLOR,
+):
     """Color each gene by its association with y.
 
-    Binary y -> AUC of the gene as a predictor (>0.5 salmon, <0.5 skyblue).
-    Continuous y -> Spearman r (>0 salmon, <0 skyblue). Mirrors the R code's
-    glmnet::auc / cor(method="spearman") branch.
+    Binary y -> AUC of the gene as a predictor (>0.5 high_y_color,
+    <0.5 low_y_color). Continuous y -> Spearman r (>0 high_y_color,
+    <0 low_y_color). Mirrors the R code's glmnet::auc / cor(method="spearman").
+
+    high_y_color  -> gene UP with the higher Y class (e.g. KO / Y=1)
+    low_y_color   -> gene UP with the lower  Y class (e.g. WT / Y=0)
+    neutral_color -> at the threshold or insufficient data
     """
     y = np.asarray(y).ravel()
     uniq = np.unique(y[~pd.isna(y)])
@@ -391,24 +402,35 @@ def _node_colors_from_y(x_gene, y):
             xs = np.asarray(x_gene[g])
             mask = ~(np.isnan(xs) | np.isnan(y_bin.astype(float)))
             if mask.sum() < 2 or len(np.unique(y_bin[mask])) < 2:
-                colors.append(_NEUTRAL_COLOR)
+                colors.append(neutral_color)
                 continue
             a = roc_auc_score(y_bin[mask], xs[mask])
-            colors.append(_HIGH_Y_COLOR if a > 0.5
-                          else _LOW_Y_COLOR if a < 0.5
-                          else _NEUTRAL_COLOR)
+            colors.append(high_y_color if a > 0.5
+                          else low_y_color if a < 0.5
+                          else neutral_color)
     else:
         for g in x_gene.columns:
             xs = np.asarray(x_gene[g])
             mask = ~(np.isnan(xs) | np.isnan(y.astype(float)))
             if mask.sum() < 3:
-                colors.append(_NEUTRAL_COLOR)
+                colors.append(neutral_color)
                 continue
             r = spearmanr(y[mask], xs[mask]).statistic
-            colors.append(_HIGH_Y_COLOR if r > 0
-                          else _LOW_Y_COLOR if r < 0
-                          else _NEUTRAL_COLOR)
+            colors.append(high_y_color if r > 0
+                          else low_y_color if r < 0
+                          else neutral_color)
     return colors
+
+
+def _edge_rgba(base_color, rs, min_alpha, max_alpha):
+    """Per-edge RGBA colors with alpha scaled to |r|.
+
+    Mirrors qgraph behavior where weak edges fade out and strong edges
+    stay solid, so the visual edge weight tracks the correlation strength.
+    """
+    r0, g0, b0, _ = to_rgba(base_color)
+    span = max_alpha - min_alpha
+    return [(r0, g0, b0, min(max_alpha, min_alpha + span * abs(r))) for r in rs]
 
 
 def plot_lf_correlation_network(
@@ -418,12 +440,21 @@ def plot_lf_correlation_network(
     latent_factor,
     out_dir,
     minimum=0.25,
-    repulsion=0.1,
-    figsize=(7, 5),
-    node_size=900,
+    repulsion=2.0,
+    iterations=300,
+    layout="spring",            # "spring" | "kamada_kawai" | "circular"
+    figsize=(9, 7),
+    node_size=1400,
     font_size=8,
-    max_edge_width=4.0,
+    label_color="black",
+    max_edge_width=4.5,
+    min_edge_alpha=0.25,
+    max_edge_alpha=1.0,
+    high_y_color=_HIGH_Y_COLOR,
+    low_y_color=_LOW_Y_COLOR,
+    neutral_color=_NEUTRAL_COLOR,
     filetype="pdf",
+    also_svg=True,
     seed=1,
     show=True,
 ):
@@ -445,10 +476,27 @@ def plot_lf_correlation_network(
     minimum : float
         Drop edges with |Spearman r| below this threshold (qgraph minimum).
     repulsion : float
-        Spring-layout repulsion multiplier; lower = more spread. Mapped to
-        networkx spring_layout `k = repulsion / sqrt(n_nodes)`.
+        Spring-layout repulsion. Spread is set by k = repulsion / sqrt(n_nodes);
+        higher = more spread. Default 2.0 gives a layout that avoids overlap for
+        ~10-30 node networks. The qgraph default of 0.1 produces clumped layouts
+        in networkx (k ~ 0.02) and should not be used here.
+    iterations : int
+        Number of spring-layout iterations (more = better convergence).
+    layout : {"spring", "kamada_kawai", "circular"}
+        Layout algorithm. Spring is qgraph's default; kamada_kawai is
+        typically the most overlap-free for small dense graphs.
     max_edge_width : float
-        Width of an edge with |r| = 1; widths scale linearly with |r|.
+        Edge width at |r| = 1; widths scale linearly with |r|.
+    min_edge_alpha, max_edge_alpha : float
+        Edge opacity at |r| = minimum vs |r| = 1. Edges at intermediate
+        strength fade between these.
+    high_y_color, low_y_color, neutral_color : str | tuple
+        Node colors for genes UP with high-Y class, UP with low-Y class, and
+        neutral. Pass SEX_CONDITION_PALETTE[(sex, 'KO')] and [(sex, 'WT')]
+        to make node colors match the rest of the notebook's color scheme.
+    also_svg : bool
+        In addition to <out_dir>/<LF>.<filetype>, also save an editable-text
+        SVG sibling (svg.fonttype="none") for Illustrator polish.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -460,7 +508,12 @@ def plot_lf_correlation_network(
         return None
 
     x_gene = x.loc[:, genes].astype(float)
-    node_colors = _node_colors_from_y(x_gene, y)
+    node_colors = _node_colors_from_y(
+        x_gene, y,
+        high_y_color=high_y_color,
+        low_y_color=low_y_color,
+        neutral_color=neutral_color,
+    )
 
     # Spearman correlation matrix across genes.
     corr = x_gene.corr(method="spearman").values
@@ -470,6 +523,7 @@ def plot_lf_correlation_network(
     G.add_nodes_from(range(len(genes)))
     pos_edges, neg_edges = [], []
     pos_widths, neg_widths = [], []
+    pos_rs, neg_rs = [], []
     for i in range(len(genes)):
         for j in range(i + 1, len(genes)):
             r = corr[i, j]
@@ -478,35 +532,67 @@ def plot_lf_correlation_network(
             G.add_edge(i, j, weight=r)
             w = max_edge_width * abs(r)
             if r >= 0:
-                pos_edges.append((i, j)); pos_widths.append(w)
+                pos_edges.append((i, j))
+                pos_widths.append(w)
+                pos_rs.append(r)
             else:
-                neg_edges.append((i, j)); neg_widths.append(w)
+                neg_edges.append((i, j))
+                neg_widths.append(w)
+                neg_rs.append(r)
 
-    k = repulsion / np.sqrt(max(len(genes), 1))
-    pos = nx.spring_layout(G, k=k, seed=seed)
+    # --- Layout -------------------------------------------------------
+    n = len(genes)
+    if layout == "kamada_kawai" and G.number_of_edges() > 0:
+        pos = nx.kamada_kawai_layout(G)
+    elif layout == "circular":
+        pos = nx.circular_layout(G)
+    else:
+        # spring (Fruchterman-Reingold). k controls ideal node spacing.
+        # networkx default k = 1/sqrt(n) ~ 0.23 for n=19; we scale that up
+        # by `repulsion` so the user has a single intuitive knob.
+        k = repulsion / np.sqrt(max(n, 1))
+        pos = nx.spring_layout(
+            G, k=k, iterations=iterations, seed=seed, scale=1.5
+        )
 
+    # --- Draw ---------------------------------------------------------
     fig, ax = plt.subplots(figsize=figsize)
     if neg_edges:
-        nx.draw_networkx_edges(G, pos, edgelist=neg_edges, ax=ax,
-                               width=neg_widths, edge_color=_NEG_EDGE_COLOR,
-                               alpha=0.85)
+        nx.draw_networkx_edges(
+            G, pos, edgelist=neg_edges, ax=ax,
+            width=neg_widths,
+            edge_color=_edge_rgba(
+                _NEG_EDGE_COLOR, neg_rs, min_edge_alpha, max_edge_alpha
+            ),
+        )
     if pos_edges:
-        nx.draw_networkx_edges(G, pos, edgelist=pos_edges, ax=ax,
-                               width=pos_widths, edge_color=_POS_EDGE_COLOR,
-                               alpha=0.85)
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_size,
-                           node_color=node_colors, node_shape="o",
-                           edgecolors="black", linewidths=0.6)
-    nx.draw_networkx_labels(G, pos, ax=ax,
-                            labels={i: g for i, g in enumerate(genes)},
-                            font_size=font_size)
+        nx.draw_networkx_edges(
+            G, pos, edgelist=pos_edges, ax=ax,
+            width=pos_widths,
+            edge_color=_edge_rgba(
+                _POS_EDGE_COLOR, pos_rs, min_edge_alpha, max_edge_alpha
+            ),
+        )
+    nx.draw_networkx_nodes(
+        G, pos, ax=ax, node_size=node_size,
+        node_color=node_colors, node_shape="o",
+        edgecolors="black", linewidths=0.6,
+    )
+    nx.draw_networkx_labels(
+        G, pos, ax=ax,
+        labels={i: g for i, g in enumerate(genes)},
+        font_size=font_size, font_color=label_color,
+    )
 
-    ax.set_title(latent_factor)
+    ax.set_title(latent_factor, fontsize=12, fontweight="bold")
     ax.set_axis_off()
+    ax.margins(0.12)        # breathing room so outer nodes aren't clipped
     plt.tight_layout()
 
     out_path = out_dir / f"{latent_factor}.{filetype}"
     plt.savefig(out_path, bbox_inches="tight")
+    if also_svg and filetype != "svg":
+        plt.savefig(out_path.with_suffix(".svg"), bbox_inches="tight")
     if show:
         plt.show()
     else:
