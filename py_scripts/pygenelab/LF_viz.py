@@ -642,6 +642,9 @@ def plot_lf_correlation_network(
     node_size_by_degree=True,   # scale node area by WEIGHTED degree (sum |r|)
     node_size_min_factor=0.55,  # smallest node = node_size * this (was 0.65)
     node_size_max_factor=2.8,   # largest  node = node_size * this (was 2.2)
+    size_metric=None,           # override: column name in feature_list to size by
+    hub_metric=None,            # override: column name in feature_list for hub test
+    size_power=1.0,             # raise the size metric to this power (compress / expand range)
     font_size=8,
     label_color="black",
     label_bbox=True,            # white halo behind labels for readability
@@ -755,6 +758,25 @@ def plot_lf_correlation_network(
     hub_quantile : float in (0, 1)
         Nodes with weighted degree at or above this quantile are treated
         as hubs. 0.75 (default) bolds the top quarter.
+    size_metric : str | None
+        Override what drives node size. None = use the weighted-degree
+        metric (current default). Otherwise pass the name of any numeric
+        column in `feature_list` (e.g. "A_loading", "AUCs") and that
+        column's values are used to scale each node. This is how you
+        make the SLIDE driver genes (high A_loading) visually dominant
+        even when they are not the most-connected by correlation
+        (e.g. Nr4a3 in Z15: A_loading=1 but only 4 strong edges, so
+        weighted-degree sizing buries it among the downstream cluster).
+    hub_metric : str | None
+        Same idea for hub_label_bold. None = use weighted degree (the
+        previous behavior). Pass a column name to use that instead.
+        If you set size_metric and leave hub_metric=None, hub_metric
+        defaults to size_metric so the bold labels match the big nodes.
+    size_power : float
+        Apply x = x**size_power BEFORE normalizing to [min_factor,
+        max_factor]. Use size_power<1 to compress the dynamic range
+        (peripherals get a bit bigger, hubs a bit smaller) or
+        size_power>1 to exaggerate it. Default 1.0 = linear.
     max_edge_width : float
         Edge width at |r| = 1; widths scale linearly with |r|.
     min_edge_alpha, max_edge_alpha : float
@@ -850,30 +872,63 @@ def plot_lf_correlation_network(
             weight=layout_weight,
         )
 
-    # --- Per-node sizes from weighted degree --------------------------
-    # Weighted degree = sum of |r| over each node's incident edges. Hubs
-    # (genes co-regulated with many partners) get a larger marker; isolates
-    # stay small. This is the visual-hierarchy trick that makes reference
-    # figures (BCKDHB / BCAT2 etc.) so readable.
+    # --- Per-node sizes -----------------------------------------------
+    # Default: weighted degree = sum of |r| over each node's incident
+    # edges. Hubs (genes co-regulated with many partners) get a larger
+    # marker; isolates stay small. This is the visual-hierarchy trick
+    # that makes reference figures (BCKDHB / BCAT2 etc.) so readable.
+    #
+    # Override: when `size_metric` names a column of feature_list, that
+    # column's values are used instead. This is how you make SLIDE
+    # driver genes (high A_loading) dominate when they are not the
+    # most-connected by correlation (e.g. Nr4a3 in Z15).
     weighted_deg = np.array([
         sum(abs(d["weight"]) for _, _, d in G.edges(i, data=True))
         for i in range(len(genes))
     ], dtype=float)
 
-    if node_size_by_degree and weighted_deg.max() > weighted_deg.min():
-        deg_norm = ((weighted_deg - weighted_deg.min())
-                    / (weighted_deg.max() - weighted_deg.min()))
+    def _values_from_column(col_name):
+        """Pull a numeric column from feature_list, ordered to match genes."""
+        if col_name not in feature_list.columns:
+            raise KeyError(
+                f"size_metric/hub_metric '{col_name}' not in feature_list "
+                f"columns: {list(feature_list.columns)}"
+            )
+        lookup = dict(zip(feature_list["names"], feature_list[col_name]))
+        return np.array([float(lookup[g]) for g in genes], dtype=float)
+
+    size_values = (
+        _values_from_column(size_metric) if size_metric is not None
+        else weighted_deg
+    )
+    # size_power lets the user compress or exaggerate the dynamic range
+    # so the smallest peripheral isn't a dot and the biggest hub isn't
+    # eclipsing its label. Clip negatives just in case (e.g. AUC<0.5).
+    sv = np.clip(size_values, a_min=0.0, a_max=None) ** float(size_power)
+
+    if node_size_by_degree and sv.max() > sv.min():
+        sv_norm = (sv - sv.min()) / (sv.max() - sv.min())
         sizes_arr = node_size * (
             node_size_min_factor
-            + (node_size_max_factor - node_size_min_factor) * deg_norm
+            + (node_size_max_factor - node_size_min_factor) * sv_norm
         )
     else:
         sizes_arr = np.full(len(genes), float(node_size))
 
-    # Hubs = top quantile by weighted degree (for bold labels).
-    if hub_label_bold and G.number_of_edges() > 0:
-        hub_thresh = float(np.quantile(weighted_deg, hub_quantile))
-        is_hub = weighted_deg >= hub_thresh
+    # Hubs = top quantile by the chosen hub metric (for bold labels).
+    # If hub_metric is unset but size_metric IS set, default the hub
+    # test to use size_metric -- it would be confusing if the biggest
+    # node weren't the one with a bold label.
+    if hub_metric is not None:
+        hub_values = _values_from_column(hub_metric)
+    elif size_metric is not None:
+        hub_values = size_values
+    else:
+        hub_values = weighted_deg
+
+    if hub_label_bold and G.number_of_edges() > 0 and hub_values.max() > 0:
+        hub_thresh = float(np.quantile(hub_values, hub_quantile))
+        is_hub = hub_values >= hub_thresh
     else:
         is_hub = np.zeros(len(genes), dtype=bool)
 
