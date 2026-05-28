@@ -451,19 +451,32 @@ def _abs_weight_graph(G):
 def _community_aware_layout(
     G, repulsion, iterations, seed,
     weighted_attraction=False,
-    community_radius=1.5,
-    within_community_scale=0.55,
+    community_radius=3.0,
+    within_community_scale=0.9,
+    within_community_k_factor=0.7,
 ):
     """Layout where Louvain communities form distinct spatial regions.
 
     Detects communities via Louvain (using |r| as edge weights if
     weighted_attraction=True), places each community center on a regular
-    polygon, then runs a small spring layout inside each community so
-    its nodes orbit that center. Strongly co-regulated sub-modules end up
-    physically separated rather than mashed into one central blob.
+    polygon of radius `community_radius`, then runs a per-community
+    spring layout localized around that center.
+
+    Parameters that control how "spread out" the result looks:
+    - community_radius : how far each community center sits from the
+      origin. Larger -> communities sit further apart and the overall
+      layout is roomier.
+    - within_community_scale : scale of the in-community spring layout
+      (matplotlib coords). Larger -> nodes within a community spread
+      farther around their community center.
+    - within_community_k_factor : multiplier on `repulsion` for the
+      in-community spring constant. Larger -> nodes inside a community
+      repel each other more, so the sub-cluster opens up rather than
+      collapsing to a tight clump.
 
     Falls back to plain spring_layout if community detection is
-    unavailable (older networkx) or the graph has zero edges.
+    unavailable (older networkx) or the graph has zero / one
+    community.
     """
     n_nodes = G.number_of_nodes()
     if G.number_of_edges() == 0 or n_nodes < 2:
@@ -508,11 +521,13 @@ def _community_aware_layout(
         if len(comm) == 1:
             pos[comm[0]] = (center[0], center[1])
             continue
-        # Local layout for nodes inside this community. Smaller k so the
-        # subcluster is compact; smaller scale so the whole sub-layout
-        # fits inside the community's spatial slot.
+        # Local layout for nodes inside this community.
+        # within_community_k_factor controls how much they repel each
+        # other; within_community_scale controls the overall spread of
+        # the sub-layout. Both are bumped from the previous tight values
+        # so each community visibly breathes around its center.
         subg = G_use.subgraph(comm).copy()
-        sub_k = (repulsion * 0.35) / np.sqrt(len(comm))
+        sub_k = (repulsion * within_community_k_factor) / np.sqrt(len(comm))
         sub_pos = nx.spring_layout(
             subg, k=sub_k, iterations=iterations,
             seed=seed, scale=within_community_scale,
@@ -618,6 +633,9 @@ def plot_lf_correlation_network(
     layout="spring",            # "spring" | "kamada_kawai" | "circular"
     weighted_attraction=False,  # use |r| as spring weight (cluster strong pairs)
     community_layout=False,     # Louvain modules in distinct spatial regions
+    community_radius=3.0,           # distance between community centers
+    within_community_scale=0.9,     # spread of nodes inside each community
+    within_community_k_factor=0.7,  # repulsion multiplier inside each community
     edge_curvature=0.0,         # 0 = straight; ~0.08 = slight curve (less crossing)
     figsize=(9, 7),
     node_size=1400,
@@ -685,6 +703,23 @@ def plot_lf_correlation_network(
         "BCKDHB-cluster / BCAT2-cluster" pattern from the reference
         figure. Falls back to the plain spring layout if Louvain is
         unavailable or there is only one community.
+    community_radius, within_community_scale,
+    within_community_k_factor : float
+        Knobs that control how spread-out the community layout looks
+        (only used when community_layout=True). Together they decide
+        whether the resulting figure feels like "tight blobs on a
+        polygon" or "loose modules occupying the whole canvas":
+        - community_radius (default 3.0) -- distance between community
+          centers. Larger -> modules sit further apart.
+        - within_community_scale (default 0.9) -- size of each
+          community's internal sub-layout. Larger -> nodes inside a
+          community fan out around its center rather than clumping.
+        - within_community_k_factor (default 0.7) -- multiplier on
+          `repulsion` for the in-community spring constant. Larger ->
+          stronger repulsion between sibling nodes inside a community,
+          so the sub-cluster opens up.
+        Bump all three together if the layout still looks too tight;
+        drop them all together if it looks too explody.
     edge_curvature : float
         Bend each edge by this fraction (matplotlib arc3 rad). 0 = the
         previous straight LineCollection; ~0.05-0.12 = slight curve
@@ -791,9 +826,13 @@ def plot_lf_correlation_network(
 
     if community_layout and G.number_of_edges() > 0:
         # Louvain-driven layout: each module gets its own spatial region.
+        # The three spread knobs decide how loose vs tight the modules read.
         pos = _community_aware_layout(
             G, repulsion, iterations, seed,
             weighted_attraction=weighted_attraction,
+            community_radius=community_radius,
+            within_community_scale=within_community_scale,
+            within_community_k_factor=within_community_k_factor,
         )
     elif layout == "kamada_kawai" and G.number_of_edges() > 0:
         pos = nx.kamada_kawai_layout(
