@@ -433,6 +433,97 @@ def _edge_rgba(base_color, rs, min_alpha, max_alpha):
     return [(r0, g0, b0, min(max_alpha, min_alpha + span * abs(r))) for r in rs]
 
 
+def _abs_weight_graph(G):
+    """Copy of G with edge `weight` replaced by abs(weight).
+
+    networkx layouts read `weight` as a positive spring constant -- passing
+    the signed Spearman r would break spring_layout for any negatively
+    correlated pair. We want strongly correlated genes (high |r|) to
+    attract each other regardless of sign, so layout sees abs(r).
+    """
+    G_abs = nx.Graph()
+    G_abs.add_nodes_from(G.nodes())
+    for u, v, d in G.edges(data=True):
+        G_abs.add_edge(u, v, weight=abs(d.get("weight", 1.0)))
+    return G_abs
+
+
+def _community_aware_layout(
+    G, repulsion, iterations, seed,
+    weighted_attraction=False,
+    community_radius=1.5,
+    within_community_scale=0.55,
+):
+    """Layout where Louvain communities form distinct spatial regions.
+
+    Detects communities via Louvain (using |r| as edge weights if
+    weighted_attraction=True), places each community center on a regular
+    polygon, then runs a small spring layout inside each community so
+    its nodes orbit that center. Strongly co-regulated sub-modules end up
+    physically separated rather than mashed into one central blob.
+
+    Falls back to plain spring_layout if community detection is
+    unavailable (older networkx) or the graph has zero edges.
+    """
+    n_nodes = G.number_of_nodes()
+    if G.number_of_edges() == 0 or n_nodes < 2:
+        return nx.spring_layout(G, seed=seed, scale=1.5, weight=None)
+
+    G_use = _abs_weight_graph(G) if weighted_attraction else G
+    layout_weight = "weight" if weighted_attraction else None
+
+    try:
+        from networkx.algorithms.community import louvain_communities
+        communities = list(
+            louvain_communities(G_use, weight=layout_weight, seed=seed)
+        )
+    except Exception:
+        # Older networkx, or any other failure mode: just use plain spring.
+        k = repulsion / np.sqrt(max(n_nodes, 1))
+        return nx.spring_layout(
+            G_use, k=k, iterations=iterations,
+            seed=seed, scale=1.5, weight=layout_weight,
+        )
+
+    communities = [list(c) for c in communities if len(c) > 0]
+    n_comm = len(communities)
+    if n_comm <= 1:
+        # Single community = nothing to separate; just spring-layout it.
+        k = repulsion / np.sqrt(max(n_nodes, 1))
+        return nx.spring_layout(
+            G_use, k=k, iterations=iterations,
+            seed=seed, scale=1.5, weight=layout_weight,
+        )
+
+    # Bigger communities first (top of the polygon = largest cluster).
+    communities.sort(key=len, reverse=True)
+    angle_step = 2 * np.pi / n_comm
+    pos = {}
+    for i, comm in enumerate(communities):
+        angle = np.pi / 2 - i * angle_step   # start at top, go clockwise
+        center = np.array(
+            [community_radius * np.cos(angle),
+             community_radius * np.sin(angle)]
+        )
+        if len(comm) == 1:
+            pos[comm[0]] = (center[0], center[1])
+            continue
+        # Local layout for nodes inside this community. Smaller k so the
+        # subcluster is compact; smaller scale so the whole sub-layout
+        # fits inside the community's spatial slot.
+        subg = G_use.subgraph(comm).copy()
+        sub_k = (repulsion * 0.35) / np.sqrt(len(comm))
+        sub_pos = nx.spring_layout(
+            subg, k=sub_k, iterations=iterations,
+            seed=seed, scale=within_community_scale,
+            weight=layout_weight,
+        )
+        for node, p in sub_pos.items():
+            pos[node] = (center[0] + p[0], center[1] + p[1])
+
+    return pos
+
+
 def _resolve_overlaps(pos, node_size, ax, padding=1.25,
                       n_iters=400, step=0.6):
     """Push apart nodes that overlap in display coordinates.
@@ -525,11 +616,14 @@ def plot_lf_correlation_network(
     repulsion=6.0,
     iterations=800,
     layout="spring",            # "spring" | "kamada_kawai" | "circular"
+    weighted_attraction=False,  # use |r| as spring weight (cluster strong pairs)
+    community_layout=False,     # Louvain modules in distinct spatial regions
+    edge_curvature=0.0,         # 0 = straight; ~0.08 = slight curve (less crossing)
     figsize=(9, 7),
     node_size=1400,
-    node_size_by_degree=True,   # scale node area by weighted degree
-    node_size_min_factor=0.65,  # smallest node = node_size * this
-    node_size_max_factor=2.2,   # largest  node = node_size * this
+    node_size_by_degree=True,   # scale node area by WEIGHTED degree (sum |r|)
+    node_size_min_factor=0.55,  # smallest node = node_size * this (was 0.65)
+    node_size_max_factor=2.8,   # largest  node = node_size * this (was 2.2)
     font_size=8,
     label_color="black",
     label_bbox=True,            # white halo behind labels for readability
@@ -574,17 +668,42 @@ def plot_lf_correlation_network(
         Number of spring-layout iterations (more = better convergence).
     layout : {"spring", "kamada_kawai", "circular"}
         Layout algorithm. Spring is qgraph's default; kamada_kawai is
-        typically the most overlap-free for small dense graphs.
+        typically the most overlap-free for small dense graphs. Ignored
+        when community_layout=True.
+    weighted_attraction : bool
+        If True, pass weight=|r| to the layout so strongly correlated
+        gene pairs experience stiffer spring constants and physically
+        cluster. Combined with community_layout=True this is the
+        biggest visual win on dense networks. False by default to
+        preserve the previous behavior.
+    community_layout : bool
+        If True, detect Louvain communities and lay the network out
+        with each community in its own spatial region (a regular polygon
+        of community centers, plus a small spring layout inside each).
+        Strongly co-regulated sub-modules end up physically separated
+        rather than fused into one central blob -- this is the
+        "BCKDHB-cluster / BCAT2-cluster" pattern from the reference
+        figure. Falls back to the plain spring layout if Louvain is
+        unavailable or there is only one community.
+    edge_curvature : float
+        Bend each edge by this fraction (matplotlib arc3 rad). 0 = the
+        previous straight LineCollection; ~0.05-0.12 = slight curve
+        that reduces apparent edge crossings in dense regions. Non-zero
+        curvature switches edge drawing to FancyArrowPatch (slightly
+        slower but supports curving).
     node_size : float
         Base node area (points^2). Used as the "median" node size when
         node_size_by_degree=True, otherwise applied uniformly.
     node_size_by_degree : bool
-        If True (default), scale each node's area by its weighted degree
-        (sum of |r| over incident edges) so hubs appear visibly larger
-        than peripheral nodes -- mirrors the visual hierarchy in
-        Cytoscape / BCKDHB-style network figures. Per-node sizes are
-        also passed to the overlap resolver so larger hubs get
-        correspondingly larger pixel-space buffers.
+        If True (default), scale each node's area by its WEIGHTED degree
+        (sum of |r| over incident edges) so genes that are strongly
+        co-regulated with many partners appear visibly larger than
+        peripheral nodes. Weighted (not raw) degree matters: a node
+        with 4 partners at |r|=0.9 reads as a bigger hub than one with
+        8 partners at |r|=0.3 -- the correlation strength is what
+        encodes "tightness of co-regulation". Per-node sizes are also
+        passed to the overlap resolver so larger hubs get correspondingly
+        larger pixel-space buffers.
     node_size_min_factor, node_size_max_factor : float
         The node with the smallest weighted degree gets area
         node_size * node_size_min_factor; the largest gets
@@ -660,15 +779,26 @@ def plot_lf_correlation_network(
                 neg_rs.append(r)
 
     # --- Layout -------------------------------------------------------
-    # Important: pass weight=None to every layout. The graph carries the
-    # correlation r as edge `weight`, which networkx interprets as an
-    # ATTRACTIVE spring strength -- so strongly correlated genes get pulled
-    # right on top of each other. We only want the topology to influence
-    # spacing, not the correlation magnitude (edge thickness already carries
-    # |r|).
+    # By default we pass weight=None -- the graph carries signed r as edge
+    # `weight`, and feeding signed weights to spring_layout breaks the
+    # algorithm (negative weights = repulsive springs). When
+    # weighted_attraction=True the user opts in to |r|-weighted spring
+    # constants so strongly correlated genes physically cluster; we build a
+    # separate G_layout with positive weights = abs(r) for that.
     n = len(genes)
-    if layout == "kamada_kawai" and G.number_of_edges() > 0:
-        pos = nx.kamada_kawai_layout(G, weight=None, scale=1.5)
+    layout_weight = "weight" if weighted_attraction else None
+    G_layout = _abs_weight_graph(G) if weighted_attraction else G
+
+    if community_layout and G.number_of_edges() > 0:
+        # Louvain-driven layout: each module gets its own spatial region.
+        pos = _community_aware_layout(
+            G, repulsion, iterations, seed,
+            weighted_attraction=weighted_attraction,
+        )
+    elif layout == "kamada_kawai" and G.number_of_edges() > 0:
+        pos = nx.kamada_kawai_layout(
+            G_layout, weight=layout_weight, scale=1.5
+        )
     elif layout == "circular":
         pos = nx.circular_layout(G, scale=1.5)
     else:
@@ -677,8 +807,8 @@ def plot_lf_correlation_network(
         # `repulsion` so a single knob controls overall spread.
         k = repulsion / np.sqrt(max(n, 1))
         pos = nx.spring_layout(
-            G, k=k, iterations=iterations, seed=seed, scale=1.5,
-            weight=None,
+            G_layout, k=k, iterations=iterations, seed=seed, scale=1.5,
+            weight=layout_weight,
         )
 
     # --- Per-node sizes from weighted degree --------------------------
@@ -750,6 +880,19 @@ def plot_lf_correlation_network(
     ax.set_xlim(xs.min() - pad, xs.max() + pad)
     ax.set_ylim(ys.min() - pad, ys.max() + pad)
 
+    # Edge-curvature mode swaps the default LineCollection for a stack of
+    # FancyArrowPatch objects (one per edge). Slower but supports curving
+    # via connectionstyle, which dramatically reduces visual edge-crossing
+    # in dense regions. arrowstyle="-" turns the arrowheads off so the
+    # graph still reads as undirected.
+    edge_kwargs = {}
+    if edge_curvature != 0:
+        edge_kwargs.update({
+            "arrows": True,
+            "arrowstyle": "-",
+            "connectionstyle": f"arc3,rad={edge_curvature}",
+        })
+
     if neg_edges:
         nx.draw_networkx_edges(
             G, pos, edgelist=neg_edges, ax=ax,
@@ -757,6 +900,7 @@ def plot_lf_correlation_network(
             edge_color=_edge_rgba(
                 _NEG_EDGE_COLOR, neg_rs, min_edge_alpha, max_edge_alpha
             ),
+            **edge_kwargs,
         )
     if pos_edges:
         nx.draw_networkx_edges(
@@ -765,6 +909,7 @@ def plot_lf_correlation_network(
             edge_color=_edge_rgba(
                 _POS_EDGE_COLOR, pos_rs, min_edge_alpha, max_edge_alpha
             ),
+            **edge_kwargs,
         )
     nx.draw_networkx_nodes(
         G, pos, ax=ax, node_size=sizes_arr,
