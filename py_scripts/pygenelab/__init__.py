@@ -11,6 +11,10 @@ from .images import *
 from .plotting import *
 from .utils import *
 from .geneset_activity import *
+from .pseudotime_animation import (
+    create_animated_pathway_plot,
+    animate_gene_along_pseudotime,
+)
 from .deg_functional_enrichment import *
 from .transcriptional_noise import *
 from .LF_viz import *
