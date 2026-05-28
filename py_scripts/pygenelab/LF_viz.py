@@ -448,9 +448,11 @@ def _resolve_overlaps(pos, node_size, ax, padding=1.25,
     ----------
     pos : dict[node -> (x, y)]
         Layout positions in data coords. Mutated in place and returned.
-    node_size : float
+    node_size : float | array-like
         matplotlib marker area in points^2 (same value passed to
-        draw_networkx_nodes). Marker radius = sqrt(node_size / pi) points.
+        draw_networkx_nodes). Scalar applies to every node; an array gives
+        a per-node area in the order of `pos`. Marker radius =
+        sqrt(node_size / pi) points.
     ax : matplotlib.axes.Axes
         Axes with x/ylim already set (transData needs realized view limits).
     padding : float
@@ -465,36 +467,43 @@ def _resolve_overlaps(pos, node_size, ax, padding=1.25,
         return pos
 
     fig = ax.figure
-    # marker radius in pixels: node_size is points^2, 1 pt = dpi/72 px.
-    r_pix = np.sqrt(node_size / np.pi) * fig.dpi / 72.0 * padding
-    min_sep = 2.0 * r_pix
+    # Per-node marker radius in pixels: marker area = pi*r^2, 1 pt = dpi/72 px.
+    sizes_arr = (np.full(len(nodes), float(node_size))
+                 if np.isscalar(node_size)
+                 else np.asarray(node_size, dtype=float))
+    r_pix = np.sqrt(sizes_arr / np.pi) * fig.dpi / 72.0 * padding
+    # Pairwise minimum separation: min_sep[i,j] = r_pix[i] + r_pix[j].
+    min_sep = r_pix[:, None] + r_pix[None, :]
 
     coords = np.array([pos[n] for n in nodes], dtype=float)
     rng = np.random.default_rng(0)
+    eye = np.eye(len(nodes), dtype=bool)
 
     for _ in range(n_iters):
         disp = ax.transData.transform(coords)
         diff = disp[:, None, :] - disp[None, :, :]
         d = np.linalg.norm(diff, axis=2)
         np.fill_diagonal(d, np.inf)
-        if d.min() >= min_sep:
+        # Early exit when every off-diagonal pair satisfies its own min_sep.
+        if (d - min_sep)[~eye].min() >= 0:
             break
 
         delta = np.zeros_like(disp)
         for i in range(len(nodes)):
             for j in range(i + 1, len(nodes)):
+                sep = min_sep[i, j]
                 dij = d[i, j]
-                if dij >= min_sep:
+                if dij >= sep:
                     continue
                 if dij < 1e-9:
                     # coincident nodes: random unit kick so the next pass
                     # has a direction to push along.
                     u = rng.normal(size=2)
                     u /= np.linalg.norm(u) + 1e-12
-                    overlap = min_sep
+                    overlap = sep
                 else:
                     u = diff[i, j] / dij
-                    overlap = min_sep - dij
+                    overlap = sep - dij
                 push = step * overlap / 2.0
                 delta[i] += u * push
                 delta[j] -= u * push
@@ -518,8 +527,15 @@ def plot_lf_correlation_network(
     layout="spring",            # "spring" | "kamada_kawai" | "circular"
     figsize=(9, 7),
     node_size=1400,
+    node_size_by_degree=True,   # scale node area by weighted degree
+    node_size_min_factor=0.65,  # smallest node = node_size * this
+    node_size_max_factor=2.2,   # largest  node = node_size * this
     font_size=8,
     label_color="black",
+    label_bbox=True,            # white halo behind labels for readability
+    label_bbox_alpha=0.75,
+    hub_label_bold=True,        # bold (slightly larger) labels for hub genes
+    hub_quantile=0.75,          # nodes >= this quantile of weighted degree
     max_edge_width=4.5,
     min_edge_alpha=0.25,
     max_edge_alpha=1.0,
@@ -559,6 +575,32 @@ def plot_lf_correlation_network(
     layout : {"spring", "kamada_kawai", "circular"}
         Layout algorithm. Spring is qgraph's default; kamada_kawai is
         typically the most overlap-free for small dense graphs.
+    node_size : float
+        Base node area (points^2). Used as the "median" node size when
+        node_size_by_degree=True, otherwise applied uniformly.
+    node_size_by_degree : bool
+        If True (default), scale each node's area by its weighted degree
+        (sum of |r| over incident edges) so hubs appear visibly larger
+        than peripheral nodes -- mirrors the visual hierarchy in
+        Cytoscape / BCKDHB-style network figures. Per-node sizes are
+        also passed to the overlap resolver so larger hubs get
+        correspondingly larger pixel-space buffers.
+    node_size_min_factor, node_size_max_factor : float
+        The node with the smallest weighted degree gets area
+        node_size * node_size_min_factor; the largest gets
+        node_size * node_size_max_factor; the rest interpolate linearly.
+    label_bbox : bool
+        Draw a semi-transparent white bbox behind each label so gene
+        names stay legible when they cross over edges.
+    label_bbox_alpha : float
+        Opacity of the label background (0=transparent, 1=opaque).
+    hub_label_bold : bool
+        Render labels for the top-degree "hub" genes in bold and one
+        font-size larger, so the most-connected genes (the visual story)
+        pop out the way BCKDHB / BCAT2 do in the reference figure.
+    hub_quantile : float in (0, 1)
+        Nodes with weighted degree at or above this quantile are treated
+        as hubs. 0.75 (default) bolds the top quarter.
     max_edge_width : float
         Edge width at |r| = 1; widths scale linearly with |r|.
     min_edge_alpha, max_edge_alpha : float
@@ -639,6 +681,33 @@ def plot_lf_correlation_network(
             weight=None,
         )
 
+    # --- Per-node sizes from weighted degree --------------------------
+    # Weighted degree = sum of |r| over each node's incident edges. Hubs
+    # (genes co-regulated with many partners) get a larger marker; isolates
+    # stay small. This is the visual-hierarchy trick that makes reference
+    # figures (BCKDHB / BCAT2 etc.) so readable.
+    weighted_deg = np.array([
+        sum(abs(d["weight"]) for _, _, d in G.edges(i, data=True))
+        for i in range(len(genes))
+    ], dtype=float)
+
+    if node_size_by_degree and weighted_deg.max() > weighted_deg.min():
+        deg_norm = ((weighted_deg - weighted_deg.min())
+                    / (weighted_deg.max() - weighted_deg.min()))
+        sizes_arr = node_size * (
+            node_size_min_factor
+            + (node_size_max_factor - node_size_min_factor) * deg_norm
+        )
+    else:
+        sizes_arr = np.full(len(genes), float(node_size))
+
+    # Hubs = top quantile by weighted degree (for bold labels).
+    if hub_label_bold and G.number_of_edges() > 0:
+        hub_thresh = float(np.quantile(weighted_deg, hub_quantile))
+        is_hub = weighted_deg >= hub_thresh
+    else:
+        is_hub = np.zeros(len(genes), dtype=bool)
+
     # --- Draw ---------------------------------------------------------
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -658,17 +727,19 @@ def plot_lf_correlation_network(
     ax.set_ylim(cy - half, cy + half)
 
     # Hard guarantee no two nodes visibly touch: bump apart any pair that
-    # overlaps in display (pixel) coordinates based on actual node_size.
-    pos = _resolve_overlaps(pos, node_size, ax, padding=overlap_padding)
+    # overlaps in display (pixel) coordinates. We pass the per-node size
+    # array so larger hubs get a correspondingly larger keep-out radius.
+    pos = _resolve_overlaps(pos, sizes_arr, ax, padding=overlap_padding)
 
     # Refit axis limits so every node MARKER (not just its center) fits
     # inside the axes with a label-sized buffer. Without this, a node whose
     # center lands near the boundary -- or that got pushed there by the
     # overlap resolver -- has its circle clipped at the edge of the plot.
+    # Use the *largest* node area for the buffer so the biggest hub still
+    # fits even if it ends up at the edge.
     xs = np.array([p[0] for p in pos.values()])
     ys = np.array([p[1] for p in pos.values()])
-    # marker radius in data coords: convert pixels -> data via transData
-    r_pix = np.sqrt(node_size / np.pi) * fig.dpi / 72.0
+    r_pix = np.sqrt(sizes_arr.max() / np.pi) * fig.dpi / 72.0
     origin = ax.transData.inverted().transform((0, 0))
     one_pix = ax.transData.inverted().transform((1, 0))
     data_per_pix = abs(one_pix[0] - origin[0])
@@ -696,15 +767,37 @@ def plot_lf_correlation_network(
             ),
         )
     nx.draw_networkx_nodes(
-        G, pos, ax=ax, node_size=node_size,
+        G, pos, ax=ax, node_size=sizes_arr,
         node_color=node_colors, node_shape="o",
         edgecolors="black", linewidths=0.6,
     )
-    nx.draw_networkx_labels(
-        G, pos, ax=ax,
-        labels={i: g for i, g in enumerate(genes)},
-        font_size=font_size, font_color=label_color,
+
+    # --- Labels: optional white bbox + bold for hub genes -------------
+    # nx.draw_networkx_labels applies font_weight / bbox uniformly to all
+    # labels, so we draw non-hub vs hub labels in two passes to give the
+    # hub genes the BCKDHB-style emphasis.
+    bbox_props = (
+        dict(facecolor="white", alpha=label_bbox_alpha,
+             edgecolor="none", boxstyle="round,pad=0.15")
+        if label_bbox else None
     )
+
+    non_hub_labels = {i: genes[i] for i in range(len(genes)) if not is_hub[i]}
+    if non_hub_labels:
+        nx.draw_networkx_labels(
+            G, pos, ax=ax, labels=non_hub_labels,
+            font_size=font_size, font_color=label_color,
+            bbox=bbox_props,
+        )
+
+    hub_labels = {i: genes[i] for i in range(len(genes)) if is_hub[i]}
+    if hub_labels:
+        nx.draw_networkx_labels(
+            G, pos, ax=ax, labels=hub_labels,
+            font_size=font_size + 1, font_color=label_color,
+            font_weight="bold",
+            bbox=bbox_props,
+        )
 
     ax.set_title(latent_factor, fontsize=12, fontweight="bold")
     ax.set_axis_off()
