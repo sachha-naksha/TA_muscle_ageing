@@ -1,0 +1,298 @@
+---
+title: "ArchR ATAC RDS → AnnData Export"
+subtitle: "For Lai et al. Nature 2024 skeletal muscle aging snATAC-seq (hg38)"
+author: "Akanksha + Claude"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(Matrix)
+library(SummarizedExperiment)
+```
+
+# 1. Configuration
+
+```{r config}
+# ── Update these ──
+rds_path   <- "/ix/djishnu/Akanksha/datasets/SKM_multimodal_ageing/objects/atac_fiber/Fiber_snATAC_65380.RDS"
+export_dir <- "/ix/djishnu/Akanksha/datasets/SKM_multimodal_ageing/objects"
+
+dir.create(export_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+# 2. Load and identify what's inside
+
+ArchR pipelines can save different things as RDS: the full ArchR project, 
+a SummarizedExperiment (from `getMatrixFromProject`), or a Seurat object 
+(from the CCA integration step). This chunk figures out which one you have.
+
+```{r load}
+obj <- readRDS(rds_path)
+
+obj_class <- class(obj)
+cat("Class:", obj_class, "\n")
+
+if (any(grepl("ArchRProject", obj_class))) {
+  cat("\n→ ArchRProject object\n")
+  cat("  NOTE: Arrow files must be accessible at their original paths.\n")
+  cat("  If moved, call obj@arrowFiles and update paths.\n")
+} else if (inherits(obj, "RangedSummarizedExperiment") || inherits(obj, "SummarizedExperiment")) {
+  cat("\n→ SummarizedExperiment (likely from getMatrixFromProject)\n")
+  cat("  Dimensions:", dim(obj), "\n")
+  cat("  Assay names:", paste(names(SummarizedExperiment::assays(obj)), collapse = ", "), "\n")
+} else {
+  cat("\n→ Unknown type\n")
+  str(obj, max.level = 2)
+}
+```
+``` {r}
+cat("Value range:", range(assay(obj)@x), "\n")
+cat("Integer-valued:", all(assay(obj)@x == floor(assay(obj)@x)), "\n")
+```
+# 3. Extract peak counts
+
+**Pick the section (3a / 3b / 3c) matching Step 2 output.** Set `eval=TRUE` 
+on that chunk, leave others `eval=FALSE`.
+
+## 3a. ArchRProject → extract PeakMatrix
+
+This is the most likely case. Requires ArchR installed and Arrow files 
+accessible on disk.
+
+```{r extract_archr, eval=FALSE}
+library(ArchR)
+
+# If arrow files were moved, fix paths first:
+# obj@arrowFiles <- gsub("/old/path/", "/new/path/", obj@arrowFiles)
+
+cat("Arrow files:\n")
+print(obj@arrowFiles)
+cat("\nAvailable matrices:\n")
+print(getAvailableMatrices(obj))
+
+# ── Peak matrix ──
+peak_se <- getMatrixFromProject(obj, useMatrix = "PeakMatrix")
+peak_counts <- assay(peak_se)
+
+# Build peak names from GenomicRanges
+gr <- rowRanges(peak_se)
+peak_names <- paste0(seqnames(gr), "-", start(gr), "-", end(gr))
+rownames(peak_counts) <- peak_names
+
+cat("Peak matrix:", nrow(peak_counts), "peaks x", ncol(peak_counts), "cells\n")
+cat("Peak name format:", head(peak_names, 3), "\n")
+
+# ── Cell metadata ──
+meta <- as.data.frame(getCellColData(obj))
+cat("Metadata columns:", paste(colnames(meta), collapse = ", "), "\n")
+
+# ── LSI embedding (from addIterativeLSI) ──
+lsi_emb <- getReducedDims(obj, reducedDims = "IterativeLSI")
+cat("LSI dims:", ncol(lsi_emb), "\n")
+
+# ── Harmony embedding (if present) ──
+harmony_emb <- tryCatch(
+  getReducedDims(obj, reducedDims = "Harmony"),
+  error = function(e) NULL
+)
+if (!is.null(harmony_emb)) cat("Harmony dims:", ncol(harmony_emb), "\n")
+
+# ── UMAP (if present) ──
+umap_emb <- tryCatch(
+  getEmbedding(obj, embedding = "UMAP"),
+  error = function(e) NULL
+)
+if (!is.null(umap_emb)) cat("UMAP dims:", ncol(umap_emb), "\n")
+
+# ── Optional: GeneScoreMatrix (useful for MultiVI) ──
+# gene_se <- getMatrixFromProject(obj, useMatrix = "GeneScoreMatrix")
+# gene_scores <- assay(gene_se)
+# gene_names <- rowData(gene_se)$name
+```
+
+## 3b. SummarizedExperiment (pre-exported peak matrix)
+
+```{r extract_se, eval=FALSE}
+library(SummarizedExperiment)
+
+peak_counts <- assay(obj)
+
+if (inherits(obj, "RangedSummarizedExperiment")) {
+  gr <- rowRanges(obj)
+  peak_names <- paste0(seqnames(gr), "-", start(gr), "-", end(gr))
+  rownames(peak_counts) <- peak_names
+}
+
+cat("Peak matrix:", nrow(peak_counts), "peaks x", ncol(peak_counts), "cells\n")
+cat("Peak name format:", head(rownames(peak_counts), 3), "\n")
+
+meta <- as.data.frame(colData(obj))
+lsi_emb <- NULL; harmony_emb <- NULL; umap_emb <- NULL
+```
+````{r extract_se, eval=TRUE}
+library(SummarizedExperiment)
+
+peak_counts <- assay(obj)
+
+if (inherits(obj, "RangedSummarizedExperiment")) {
+  gr <- rowRanges(obj)
+  peak_names <- paste0(seqnames(gr), "-", start(gr), "-", end(gr))
+  rownames(peak_counts) <- peak_names
+}
+
+cat("Peak matrix:", nrow(peak_counts), "peaks x", ncol(peak_counts), "cells\n")
+
+meta <- as.data.frame(colData(obj))
+
+# ── Try to recover embeddings from colData ────────────────────────────────────
+# ArchR sometimes stores LSI/UMAP dims as colData columns
+lsi_cols     <- grep("^LSI_|^IterativeLSI", colnames(meta), value = TRUE)
+harmony_cols <- grep("^Harmony_|^harmony_", colnames(meta), value = TRUE)
+umap_cols    <- grep("^UMAP_|^harmony_UMAP", colnames(meta), value = TRUE)
+
+lsi_emb     <- if (length(lsi_cols) > 0)     as.matrix(meta[, lsi_cols])     else NULL
+harmony_emb <- if (length(harmony_cols) > 0) as.matrix(meta[, harmony_cols]) else NULL
+umap_emb    <- if (length(umap_cols) > 0)    as.matrix(meta[, umap_cols])    else NULL
+
+cat("LSI in colData:", !is.null(lsi_emb), "\n")
+cat("Harmony in colData:", !is.null(harmony_emb), "\n")
+cat("UMAP in colData:", !is.null(umap_emb), "\n")
+````
+```{r export umap}
+umap_cols <- grep("^UMAP_|^harmony_UMAP", colnames(meta), value = TRUE)
+cat("UMAP columns found:", umap_cols, "\n")  # show exact names
+umap_emb <- as.matrix(meta[, umap_cols])
+write.table(umap_emb, file.path(export_dir, "embedding_UMAP.tsv"),
+            sep = "\t", quote = FALSE, col.names = NA)
+cat("✓ UMAP exported:", nrow(umap_emb), "cells x", ncol(umap_emb), "dims\n")
+```
+
+## 3c. Seurat object (from CCA integration step)
+
+```{r extract_seurat, eval=FALSE}
+library(Seurat)
+
+cat("Assays:", paste(names(obj@assays), collapse = ", "), "\n")
+
+# Find the ATAC assay
+atac_assay <- intersect(c("peaks", "ATAC", "Peaks", "chromatin"), names(obj@assays))[1]
+if (is.na(atac_assay)) {
+  cat("Available assays:", names(obj@assays), "\n")
+  stop("Set atac_assay manually")
+}
+
+peak_counts <- GetAssayData(obj, assay = atac_assay, slot = "counts")
+cat("Peak matrix:", nrow(peak_counts), "peaks x", ncol(peak_counts), "cells\n")
+cat("Peak name format:", head(rownames(peak_counts), 3), "\n")
+
+meta <- obj@meta.data
+lsi_emb <- tryCatch(Embeddings(obj, "lsi"), error = function(e) NULL)
+harmony_emb <- tryCatch(Embeddings(obj, "harmony"), error = function(e) NULL)
+umap_emb <- tryCatch(Embeddings(obj, "umap"), error = function(e) NULL)
+```
+
+# 4. Sanity checks
+
+```{r sanity}
+if (!inherits(peak_counts, "dgCMatrix")) {
+  peak_counts <- as(peak_counts, "dgCMatrix")
+}
+
+cat("── Sanity checks ──\n")
+cat("Dimensions:", nrow(peak_counts), "peaks x", ncol(peak_counts), "cells\n")
+cat("Nonzeros:", nnzero(peak_counts), "\n")
+cat("Sparsity:", round((1 - nnzero(peak_counts) / prod(dim(peak_counts))) * 100, 1), "%\n")
+cat("Value range:", range(peak_counts@x), "\n")
+cat("Integer-valued:", all(peak_counts@x == floor(peak_counts@x)), "\n")
+
+cat("\nFirst 5 peaks:\n"); print(head(rownames(peak_counts), 5))
+cat("\nFirst 5 barcodes:\n"); print(head(colnames(peak_counts), 5))
+cat("\nMetadata:", nrow(meta), "cells,", ncol(meta), "cols\n")
+if (ncol(meta) > 0) cat("Columns:", paste(colnames(meta), collapse = ", "), "\n")
+```
+
+# 5. Standardize peak names for scvi-tools
+
+scvi-tools / MultiVI expects `chr1-1000-2000` (all hyphens). ArchR 
+GenomicRanges sometimes produce `chr1:1000-2000`.
+
+```{r fix_peaks}
+pn <- rownames(peak_counts)
+if (any(grepl(":", pn))) {
+  cat("Fixing colon → hyphen in peak names...\n")
+  pn <- gsub(":", "-", pn)
+  rownames(peak_counts) <- pn
+}
+cat("Format OK:", head(pn, 3), "\n")
+```
+
+# 6. Export peak counts
+
+```{r export_counts}
+writeMM(peak_counts, file.path(export_dir, "atac_counts.mtx"))
+writeLines(rownames(peak_counts), file.path(export_dir, "peaks.tsv"))
+writeLines(colnames(peak_counts), file.path(export_dir, "barcodes.tsv"))
+cat("✓ Peak counts exported\n")
+```
+
+# 7. Export metadata
+
+```{r export_meta}
+# ArchR barcodes have format "sampleName#BARCODE-1" — preserve as-is
+write.csv(meta, file.path(export_dir, "metadata.csv"), row.names = TRUE)
+cat("✓ Metadata:", ncol(meta), "columns\n")
+
+# Show transferred cell type labels if present
+label_cols <- grep("cell.?type|cluster|label|predict|annot", colnames(meta),
+                   ignore.case = TRUE, value = TRUE)
+if (length(label_cols) > 0) {
+  cat("\nCell type columns found:", paste(label_cols, collapse = ", "), "\n")
+  for (lc in label_cols) {
+    cat("\n", lc, ":\n")
+    print(head(sort(table(meta[[lc]]), decreasing = TRUE), 10))
+  }
+}
+```
+
+# 8. Export embeddings
+
+```{r export_emb}
+# LSI
+if (exists("lsi_emb") && !is.null(lsi_emb)) {
+  write.table(lsi_emb, file.path(export_dir, "embedding_LSI.tsv"),
+              sep = "\t", quote = FALSE, col.names = NA)
+  cat("✓ LSI:", ncol(lsi_emb), "dims\n")
+}
+
+# Harmony
+if (exists("harmony_emb") && !is.null(harmony_emb)) {
+  write.table(harmony_emb, file.path(export_dir, "embedding_harmony.tsv"),
+              sep = "\t", quote = FALSE, col.names = NA)
+  cat("✓ Harmony:", ncol(harmony_emb), "dims\n")
+}
+
+# UMAP
+if (exists("umap_emb") && !is.null(umap_emb)) {
+  write.table(umap_emb, file.path(export_dir, "embedding_UMAP.tsv"),
+              sep = "\t", quote = FALSE, col.names = NA)
+  cat("✓ UMAP:", ncol(umap_emb), "dims\n")
+}
+```
+
+# 9. Export summary
+
+```{r summary}
+flist <- list.files(export_dir)
+cat("── Exported to", export_dir, "──\n")
+for (f in flist) {
+  sz <- round(file.info(file.path(export_dir, f))$size / 1e6, 2)
+  cat("  ", f, "(", sz, "MB)\n")
+}
+```
+

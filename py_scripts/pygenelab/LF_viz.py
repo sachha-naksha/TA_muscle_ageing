@@ -52,6 +52,8 @@ def plot_lfs_dotplot_stacked(
     sex=None,
     metric="AUCs",
     metric_label=None,
+    center="auto",
+    direction_labels=None,
     max_genes=30,
     default_pathway="Non-coding/uncharacterized",
     figsize=None,
@@ -77,6 +79,26 @@ def plot_lfs_dotplot_stacked(
        (assigned-LF) metric are dropped first; uniques are always kept.
     4. Within each panel, rows are sorted by `metric` descending.
 
+    Diverging / centered axis
+    -------------------------
+    `center` makes the plot diverge from a midpoint instead of growing
+    from 0. A binary classifier's AUC is directional around 0.5: a gene
+    with AUC > 0.5 predicts one label, a gene with AUC < 0.5 predicts the
+    other, and |AUC - 0.5| is its discriminative capacity in that
+    direction. With `center` set, each lollipop stem starts at the center
+    and points RIGHT (val > center) or LEFT (val < center), the x-range is
+    symmetric about the center, and a reference line is drawn at it.
+        "auto"  -> 0.5 when `metric` looks like an AUC column
+                   (case-insensitive "auc" in the name), else None
+        float   -> center at this value
+        None    -> no centering (stems grow from 0, original behavior)
+    `direction_labels=(left, right)` adds captions under the axis naming
+    the label each side predicts (e.g. ("Up in WT", "Up in KO")).
+
+    Common-gene assignment and `max_genes` trimming use discriminative
+    capacity |val - center| (when centered) so the most discriminative
+    copy/genes win regardless of direction.
+
     lf_specs: list of dicts with keys:
         df            (DataFrame with 'names' + metric column)
         pathway_map   (dict {gene: pathway})
@@ -84,6 +106,11 @@ def plot_lfs_dotplot_stacked(
         latent_factor (str, used as panel label + filename)
     """
     metric_label = metric_label if metric_label is not None else metric
+
+    # midpoint the axis diverges from; capacity is distance from it
+    if center == "auto":
+        center = 0.5 if "auc" in str(metric).lower() else None
+    capacity = (lambda v: abs(v - center)) if center is not None else (lambda v: v)
 
     # ---- collect per-LF dataframes with pathway annotation ---------------
     lf_dfs = []
@@ -105,17 +132,17 @@ def plot_lfs_dotplot_stacked(
                 (idx, float(r[metric]))
             )
 
-    # ---- assign each gene to ONE LF (unique -> its LF; common -> max-metric LF)
+    # ---- assign each gene to ONE LF (unique -> its LF; common -> most-discriminative LF)
     assignments = []   # list of (lf_index, gene_name, metric_value, is_common)
     for gene, hits in gene_appearances.items():
         is_common = len(hits) > 1
-        best_idx, best_val = max(hits, key=lambda t: t[1])
+        best_idx, best_val = max(hits, key=lambda t: capacity(t[1]))
         assignments.append((best_idx, gene, best_val, is_common))
 
     # ---- enforce max_genes by trimming commons first ---------------------
     uniques = [a for a in assignments if not a[3]]
     commons = sorted([a for a in assignments if a[3]],
-                     key=lambda a: a[2], reverse=True)
+                     key=lambda a: capacity(a[2]), reverse=True)
 
     if len(uniques) > max_genes:
         print(f"⚠ {len(uniques)} unique genes exceed max_genes={max_genes}; "
@@ -171,14 +198,25 @@ def plot_lfs_dotplot_stacked(
     # shared x-range over all kept metric values
     all_vals = pd.concat([sub[metric] for _, sub in panels])
     vmax = float(all_vals.max())
-    vmin_floor = min(0.0, float(all_vals.min()))
+    if center is not None:
+        # symmetric range about the center so both directions read evenly
+        max_dist = max(abs(float(all_vals.max()) - center),
+                       abs(float(all_vals.min()) - center))
+        vmin_floor = center - max_dist
+        vmax = center + max_dist
+        line_start = center
+    else:
+        vmin_floor = min(0.0, float(all_vals.min()))
+        line_start = 0.0 if vmin_floor >= 0 else vmin_floor
     x_pad = (vmax - vmin_floor) * 0.04
-    line_start = 0.0 if vmin_floor >= 0 else vmin_floor
 
     # ---- per-panel lollipops --------------------------------------------
     for ax, (spec, sub) in zip(axes, panels):
         pal = spec["palette"]
         y_pos = list(range(len(sub)))
+        if center is not None:
+            ax.axvline(center, color="0.55", linewidth=0.9,
+                       linestyle="-", zorder=0)
         for i, (_, row) in enumerate(sub.iterrows()):
             c = pal.get(row["pathway"], "#CFCFCF")
             ax.plot([line_start, row[metric]], [i, i],
@@ -188,8 +226,11 @@ def plot_lfs_dotplot_stacked(
                        color=c, s=marker_size, edgecolor="white",
                        linewidth=0.6, zorder=2, clip_on=False)
             if mark_common and row["is_common"]:
-                ax.text(row[metric] + x_pad * 0.4, i, "•",
-                        ha="left", va="center", color="0.4",
+                # nudge the dot marker toward the side the lollipop points
+                side = x_pad * 0.4 if row[metric] >= line_start else -x_pad * 0.4
+                ax.text(row[metric] + side, i, "•",
+                        ha="left" if side >= 0 else "right",
+                        va="center", color="0.4",
                         fontsize=tick_fontsize + 1, zorder=3)
 
         ax.set_yticks(y_pos)
@@ -210,8 +251,27 @@ def plot_lfs_dotplot_stacked(
         ax.tick_params(axis="y", pad=2, length=0)
 
     # shared x range + label
-    axes[-1].set_xlim(vmin_floor - x_pad * 0.5, vmax + x_pad * 3)
-    axes[-1].set_xlabel(metric_label, labelpad=8)
+    if center is not None:
+        # keep the range symmetric about the center (equal pad both sides)
+        axes[-1].set_xlim(vmin_floor - x_pad * 3, vmax + x_pad * 3)
+    else:
+        axes[-1].set_xlim(vmin_floor - x_pad * 0.5, vmax + x_pad * 3)
+    axes[-1].set_xlabel(metric_label, labelpad=8 if not direction_labels else 34)
+
+    # ---- direction captions under the axis (which label each side predicts)
+    if center is not None and direction_labels:
+        left_txt, right_txt = direction_labels
+        # fixed point-offset below the tick labels (robust to panel height)
+        axes[-1].annotate(f"← {left_txt}", xy=(0.0, 0.0),
+                          xycoords="axes fraction",
+                          xytext=(0, -26), textcoords="offset points",
+                          ha="left", va="top", fontsize=tick_fontsize,
+                          color="0.35", annotation_clip=False)
+        axes[-1].annotate(f"{right_txt} →", xy=(1.0, 0.0),
+                          xycoords="axes fraction",
+                          xytext=(0, -26), textcoords="offset points",
+                          ha="right", va="top", fontsize=tick_fontsize,
+                          color="0.35", annotation_clip=False)
 
     # ---- legend (right side, only pathways present) ---------------------
     present = set()
@@ -222,8 +282,11 @@ def plot_lfs_dotplot_stacked(
                       color=merged_palette[p], label=p, markersize=8)
                for p in ordered]
     if mark_common:
+        common_label = ("in both LFs (assigned to most discriminative LF)"
+                        if center is not None
+                        else "in both LFs (assigned to higher AUC)")
         handles.append(Line2D([0], [0], marker="$•$", linestyle="",
-                              color="0.4", label="in both LFs (assigned to higher AUC)",
+                              color="0.4", label=common_label,
                               markersize=9))
     leg = axes[0].legend(handles=handles, title=legend_title,
                          frameon=False, loc="upper left",
