@@ -133,6 +133,84 @@ def geneset_from_csv(csv_path, *, source_col="source", target_col="target",
     return out
 
 
+# default MSigDB collection prefixes stripped from a pathway label
+_METAB_LABEL_DBS = ("HALLMARK", "WP", "REACTOME", "KEGG", "GOBP", "BIOCARTA", "PID")
+
+
+def clean_metab_label(term, dbs=_METAB_LABEL_DBS):
+    """
+    drop the DB prefix (HALLMARK_/WP_/REACTOME_/...) and the 'metabolism'
+    boilerplate from an MSigDB pathway term, then title-case for readability.
+    Mirrors the `_clean_metab_label` helper used by Step 9 of
+    DEG_Functional_Enrichment.ipynb so the AUCell scores and the heatmap share
+    the same pathway labels.
+
+    Examples:
+      HALLMARK_FATTY_ACID_METABOLISM    -> 'Fatty Acid'
+      WP_PURINE_METABOLISM              -> 'Purine'
+      REACTOME_METABOLISM_OF_CARBOHYDRATES -> 'Carbohydrates'
+    """
+    s = str(term).upper()
+    for db in dbs:
+        if s.startswith(f"{db}_"):
+            s = s[len(db) + 1:]
+            break
+    if s.startswith("METABOLISM_OF_"):
+        s = s[len("METABOLISM_OF_"):]
+    if s.endswith("_METABOLISM"):
+        s = s[: -len("_METABOLISM")]
+    elif s == "METABOLISM":
+        s = "metabolism"
+    return s.replace("_", " ").title()
+
+
+def club_geneset_by_clean_label(geneset_df, dbs=_METAB_LABEL_DBS):
+    """
+    strip the DB prefix + 'metabolism' boilerplate from each `source` label
+    (via `clean_metab_label`) and club the genes together per cleaned pathway:
+    sources that simplify to the same label have their `target` genes unioned.
+
+    Returns a decoupler-format (source, target) frame whose `source` values are
+    the cleaned, heatmap-style pathway names. Use this on the geneset loaded
+    from `metabolism_enriched_pathways_<sex>.csv` so the scored obs columns read
+    'Fatty Acid', 'Purine', ... instead of 'HALLMARK_FATTY_ACID_METABOLISM'.
+    """
+    out = geneset_df.copy()
+    out["source"] = out["source"].map(lambda t: clean_metab_label(t, dbs=dbs))
+    out = out.drop_duplicates(["source", "target"]).reset_index(drop=True)
+    return out
+
+
+def metab_directions_from_csv(csv_path, *, source_col="source",
+                              direction_col="direction", dbs=_METAB_LABEL_DBS):
+    """
+    read the heatmap-direction (Up / Down) per pathway from an enriched-metabolism
+    CSV and key it by the *cleaned* pathway label, so the geneset-scoring notebook
+    can keep only the pathways that were in the Step 9 heatmap's Up (or Down) panel.
+
+    the CSV must carry a `direction` column — written by Step 9 of
+    DEG_Functional_Enrichment.ipynb (the direction of the most-significant
+    enrichment for that pathway in that sex). Raises a clear error if it is
+    absent (re-run Step 9 to regenerate the CSVs).
+
+    returns a dict {cleaned_label: 'Up'|'Down'}.
+    """
+    p = Path(csv_path)
+    if not p.exists():
+        raise FileNotFoundError(f"enriched-pathway CSV not found: {p}")
+    df = pd.read_csv(p)
+    if direction_col not in df.columns:
+        raise ValueError(
+            f"{p} has no '{direction_col}' column (found {list(df.columns)}).\n"
+            "Re-run Step 9 of DEG_Functional_Enrichment.ipynb to regenerate the "
+            "enriched-metabolism CSVs with per-pathway direction."
+        )
+    out = {}
+    for src, direction in df[[source_col, direction_col]].drop_duplicates().itertuples(index=False):
+        out[clean_metab_label(src, dbs=dbs)] = str(direction)
+    return out
+
+
 def geneset_from_gmts(gmt_paths, include_pathways=None, gene_origin="mice"):
     """
     parse multiple GMT files and stack them.
@@ -332,6 +410,62 @@ def plot_score_by_group(
     return plot_df, fig
 
 
+def _render_celltype_score_panel(
+    ax, adata, score_col, group_col, group1, group2, celltype_col, celltype,
+    *, palette, title, rotation, show_scatter, show_pvalue, group_spacing,
+    x_pad, annotate_delta,
+):
+    """
+    render one (cell type) violin-box panel for `score_col` onto `ax`:
+    the group1-vs-group2 contrast within that cell type, annotated with its
+    own Cliff's delta. shared by `plot_score_by_celltype_panels` (one pathway,
+    cell types side by side) and `plot_score_grid_by_celltype` (a grid of
+    pathways x cell types). returns
+        {"plot_df": DataFrame, "cliffs_row": Series|None, "ax": Axes}.
+    """
+    sub = subset_adata_by_obs(adata, {celltype_col: celltype})
+
+    delta_label = None
+    cliffs_row = None
+    if sub.n_obs > 0:
+        present = set(sub.obs[group_col].astype(str).unique())
+        if annotate_delta and {str(group1), str(group2)} <= present:
+            cliffs_df, _ = calculate_score_cliffs_delta(
+                adata=sub,
+                score_col=score_col,
+                group_col=group_col,
+                group1=group1,
+                group2=group2,
+            )
+            cliffs_row = cliffs_df.iloc[0]
+            delta_label = (
+                f"Cliff's δ = {float(cliffs_row['abs_cliffs_delta']):.3f} "
+                f"(higher in {cliffs_row['higher_group']})"
+            )
+
+    plot_df = prepare_group_score_df(
+        adata=sub,
+        group_col=group_col,
+        value_col=score_col,
+    )
+    plot_violin_box_combo(
+        data=plot_df,
+        x_var=group_col,
+        y_var=score_col,
+        title=title,
+        x_ticks=[group1, group2],
+        palette=palette,
+        rotation=rotation,
+        show_scatter=show_scatter,
+        show_pvalue=show_pvalue,
+        delta_label=delta_label,
+        group_spacing=group_spacing,
+        x_pad=x_pad,
+        ax=ax,
+    )
+    return {"plot_df": plot_df, "cliffs_row": cliffs_row, "ax": ax}
+
+
 def plot_score_by_celltype_panels(
     adata,
     score_col,
@@ -395,51 +529,15 @@ def plot_score_by_celltype_panels(
     axes = axes[0]
     fig.subplots_adjust(left=0.10, right=0.95, bottom=0.12, top=0.85, wspace=0.3)
 
-    groups = (group1, group2)
     results = {}
 
     for ax, ct in zip(axes, celltypes):
-        sub = subset_adata_by_obs(adata, {celltype_col: ct})
-
-        delta_label = None
-        cliffs_row = None
-        if sub.n_obs > 0:
-            present = set(sub.obs[group_col].astype(str).unique())
-            if annotate_delta and {str(group1), str(group2)} <= present:
-                cliffs_df, _ = calculate_score_cliffs_delta(
-                    adata=sub,
-                    score_col=score_col,
-                    group_col=group_col,
-                    group1=group1,
-                    group2=group2,
-                )
-                cliffs_row = cliffs_df.iloc[0]
-                delta_label = (
-                    f"Cliff's δ = {float(cliffs_row['abs_cliffs_delta']):.3f} "
-                    f"(higher in {cliffs_row['higher_group']})"
-                )
-
-        plot_df = prepare_group_score_df(
-            adata=sub,
-            group_col=group_col,
-            value_col=score_col,
+        results[ct] = _render_celltype_score_panel(
+            ax, adata, score_col, group_col, group1, group2, celltype_col, ct,
+            palette=palette, title=str(ct), rotation=rotation,
+            show_scatter=show_scatter, show_pvalue=show_pvalue,
+            group_spacing=group_spacing, x_pad=x_pad, annotate_delta=annotate_delta,
         )
-        plot_violin_box_combo(
-            data=plot_df,
-            x_var=group_col,
-            y_var=score_col,
-            title=str(ct),
-            x_ticks=list(groups),
-            palette=palette,
-            rotation=rotation,
-            show_scatter=show_scatter,
-            show_pvalue=show_pvalue,
-            delta_label=delta_label,
-            group_spacing=group_spacing,
-            x_pad=x_pad,
-            ax=ax,
-        )
-        results[ct] = {"plot_df": plot_df, "cliffs_row": cliffs_row, "ax": ax}
 
     # only the leftmost panel keeps a y-axis label / ticks for a clean strip
     for ax in axes[1:]:
@@ -455,6 +553,126 @@ def plot_score_by_celltype_panels(
     if title:
         fig.suptitle(title, fontsize=13, fontweight="bold")
 
+    # remove from pyplot's registry so the inline backend doesn't auto-render
+    # this figure on top of the caller displaying the returned object (which
+    # would show two identical copies in a notebook). The Figure object stays
+    # valid for .savefig() and for display via its repr.
+    plt.close(fig)
+    return fig, results
+
+
+def plot_score_grid_by_celltype(
+    adata,
+    score_cols,
+    group_col,
+    group1,
+    group2,
+    celltype_col,
+    celltypes,
+    *,
+    palette=None,
+    suptitle=None,
+    panel_size=(4, 5),
+    rotation=45,
+    show_scatter=False,
+    show_pvalue=False,
+    group_spacing=0.8,
+    x_pad=0.5,
+    share_y_per_pathway=True,
+    annotate_delta=True,
+):
+    """
+    grid of violin-box panels: one ROW per pathway in `score_cols`, one COLUMN
+    per cell type. each cell shows the group1-vs-group2 contrast for that
+    (pathway, cell type), annotated with its own Cliff's delta + significance
+    asterisks. cell-type names label the top row; pathway names label the
+    left-most column.
+
+    intended for the metabolism section: pass the list of cleaned metabolism
+    pathways enriched in one direction (e.g. all "Up" pathways from the Step 9
+    heatmap for one sex) so every pathway's Fast IIX | Fast IIB WT-vs-KO
+    comparison appears as a row in a single figure. `adata` must already carry
+    every `score_cols` entry in `.obs` (AUCell scoring was run on it).
+
+    parameters
+    ----------
+    score_cols : list[str]
+        obs columns to plot, one per row (order preserved top -> bottom).
+    celltypes : list[str]
+        cell-type labels (values of `celltype_col`); rendered left -> right.
+    share_y_per_pathway : bool, default True
+        within each pathway row, give the cell-type panels a common y-range
+        (the union across that row) so Fast IIX / Fast IIB are comparable.
+        y is NOT shared across pathways (AUCell magnitudes differ per geneset).
+
+    returns
+    -------
+    (fig, results) where results is a nested dict
+        {pathway: {celltype: {"plot_df": df, "cliffs_row": Series|None, "ax": Axes}}}.
+    """
+    if celltype_col not in adata.obs.columns:
+        raise KeyError(
+            f"celltype_col '{celltype_col}' not in adata.obs. "
+            f"Available columns: {list(adata.obs.columns)}"
+        )
+    score_cols = list(score_cols)
+    missing = [c for c in score_cols if c not in adata.obs.columns]
+    if missing:
+        raise KeyError(f"score_cols not in adata.obs: {missing}")
+    if not score_cols:
+        raise ValueError("score_cols is empty")
+    n_ct = len(celltypes)
+    if n_ct == 0:
+        raise ValueError("celltypes is empty")
+    n_path = len(score_cols)
+
+    fig, axes = plt.subplots(
+        n_path, n_ct,
+        figsize=(panel_size[0] * n_ct, panel_size[1] * n_path),
+        squeeze=False,
+    )
+    fig.subplots_adjust(left=0.12, right=0.96, bottom=0.08, top=0.92,
+                        wspace=0.3, hspace=0.5)
+
+    results = {}
+    for r, score_col in enumerate(score_cols):
+        row_results = {}
+        for c, ct in enumerate(celltypes):
+            ax = axes[r][c]
+            # cell-type name heads only the top row; pathway name labels col 0
+            row_results[ct] = _render_celltype_score_panel(
+                ax, adata, score_col, group_col, group1, group2,
+                celltype_col, ct,
+                palette=palette,
+                title=str(ct) if r == 0 else None,
+                rotation=rotation,
+                show_scatter=show_scatter,
+                show_pvalue=show_pvalue,
+                group_spacing=group_spacing,
+                x_pad=x_pad,
+                annotate_delta=annotate_delta,
+            )
+            ax.set_ylabel("")
+        # left-most panel of the row carries the pathway label
+        axes[r][0].set_ylabel(str(score_col), fontweight="bold")
+
+        if share_y_per_pathway and n_ct > 1:
+            row_axes = [axes[r][c] for c in range(n_ct)]
+            lo = min(a.get_ylim()[0] for a in row_axes)
+            hi = max(a.get_ylim()[1] for a in row_axes)
+            for a in row_axes:
+                a.set_ylim(lo, hi)
+
+        results[score_col] = row_results
+
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=14, fontweight="bold")
+
+    # remove from pyplot's registry so the inline backend doesn't auto-render
+    # this figure on top of the caller displaying the returned object (which
+    # would show two identical copies in a notebook). The Figure object stays
+    # valid for .savefig() and for display via its repr.
+    plt.close(fig)
     return fig, results
 
 
