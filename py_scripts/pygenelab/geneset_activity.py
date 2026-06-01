@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import decoupler as dc
+import matplotlib.pyplot as plt
 
 from .data import (
     check_genes_in_adata,
@@ -94,6 +95,42 @@ def geneset_from_gmt(gmt_path, include_pathways=None, gene_origin="mice"):
         include_pathways=include_pathways,
         gene_origin=gene_origin,
     )
+
+
+def geneset_from_csv(csv_path, *, source_col="source", target_col="target",
+                     include_pathways=None):
+    """
+    load a geneset that is already in decoupler format from a CSV with
+    `source` (pathway) and `target` (gene) columns — e.g. the
+    "metabolism_enriched_pathways_<sex>.csv" files written by the Step 9 cell
+    of DEG_Functional_Enrichment.ipynb.
+
+    no gene-case conversion is applied (the CSV is assumed to already match the
+    adata's gene naming). `include_pathways` optionally restricts to a subset
+    of `source` values. accepts a single path or a list of paths (stacked).
+    """
+    paths = [csv_path] if isinstance(csv_path, (str, Path)) else list(csv_path)
+    frames = []
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            raise FileNotFoundError(f"geneset CSV not found: {p}")
+        df = pd.read_csv(p)
+        missing = {source_col, target_col} - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"{p} is missing column(s) {sorted(missing)}; "
+                f"found {list(df.columns)}"
+            )
+        df = df[[source_col, target_col]].rename(
+            columns={source_col: "source", target_col: "target"}
+        )
+        frames.append(df)
+
+    out = pd.concat(frames, ignore_index=True)
+    if include_pathways is not None:
+        out = out[out["source"].isin(include_pathways)].reset_index(drop=True)
+    return out
 
 
 def geneset_from_gmts(gmt_paths, include_pathways=None, gene_origin="mice"):
@@ -293,6 +330,132 @@ def plot_score_by_group(
         ylim=ylim,
     )
     return plot_df, fig
+
+
+def plot_score_by_celltype_panels(
+    adata,
+    score_col,
+    group_col,
+    group1,
+    group2,
+    celltype_col,
+    celltypes,
+    *,
+    palette=None,
+    title=None,
+    panel_size=(5, 6),
+    rotation=45,
+    show_scatter=False,
+    show_pvalue=False,
+    group_spacing=0.8,
+    x_pad=0.5,
+    share_y=True,
+    annotate_delta=True,
+):
+    """
+    plot one pathway score across two groups, with one violin-box panel per
+    cell type laid out side by side in a single figure.
+
+    intended for comparing the same group contrast (e.g. WT vs KO) across
+    multiple cell types (e.g. Fast IIX then Fast IIB) on a shared y-axis so
+    the panels are directly comparable. `adata` must already carry `score_col`
+    in `.obs` (i.e. AUCell scoring was run on it).
+
+    each panel is annotated with its own Cliff's delta between group1 and
+    group2 (magnitude + which group is higher), computed within that cell type.
+
+    parameters
+    ----------
+    celltypes : list[str]
+        cell-type labels (values of `celltype_col`); rendered left -> right.
+    share_y : bool, default True
+        give every panel the same y-limits (the union across panels) so the
+        score magnitudes line up across cell types.
+
+    returns
+    -------
+    (fig, results) where results is a dict
+        {celltype: {"plot_df": DataFrame, "cliffs_row": Series|None, "ax": Axes}}.
+    """
+    if celltype_col not in adata.obs.columns:
+        raise KeyError(
+            f"celltype_col '{celltype_col}' not in adata.obs. "
+            f"Available columns: {list(adata.obs.columns)}"
+        )
+
+    n = len(celltypes)
+    if n == 0:
+        raise ValueError("celltypes is empty")
+
+    fig, axes = plt.subplots(
+        1, n,
+        figsize=(panel_size[0] * n, panel_size[1]),
+        squeeze=False,
+    )
+    axes = axes[0]
+    fig.subplots_adjust(left=0.10, right=0.95, bottom=0.12, top=0.85, wspace=0.3)
+
+    groups = (group1, group2)
+    results = {}
+
+    for ax, ct in zip(axes, celltypes):
+        sub = subset_adata_by_obs(adata, {celltype_col: ct})
+
+        delta_label = None
+        cliffs_row = None
+        if sub.n_obs > 0:
+            present = set(sub.obs[group_col].astype(str).unique())
+            if annotate_delta and {str(group1), str(group2)} <= present:
+                cliffs_df, _ = calculate_score_cliffs_delta(
+                    adata=sub,
+                    score_col=score_col,
+                    group_col=group_col,
+                    group1=group1,
+                    group2=group2,
+                )
+                cliffs_row = cliffs_df.iloc[0]
+                delta_label = (
+                    f"Cliff's δ = {float(cliffs_row['abs_cliffs_delta']):.3f} "
+                    f"(higher in {cliffs_row['higher_group']})"
+                )
+
+        plot_df = prepare_group_score_df(
+            adata=sub,
+            group_col=group_col,
+            value_col=score_col,
+        )
+        plot_violin_box_combo(
+            data=plot_df,
+            x_var=group_col,
+            y_var=score_col,
+            title=str(ct),
+            x_ticks=list(groups),
+            palette=palette,
+            rotation=rotation,
+            show_scatter=show_scatter,
+            show_pvalue=show_pvalue,
+            delta_label=delta_label,
+            group_spacing=group_spacing,
+            x_pad=x_pad,
+            ax=ax,
+        )
+        results[ct] = {"plot_df": plot_df, "cliffs_row": cliffs_row, "ax": ax}
+
+    # only the leftmost panel keeps a y-axis label / ticks for a clean strip
+    for ax in axes[1:]:
+        ax.set_ylabel("")
+    axes[0].set_ylabel(score_col, fontweight="bold")
+
+    if share_y and n > 1:
+        lo = min(ax.get_ylim()[0] for ax in axes)
+        hi = max(ax.get_ylim()[1] for ax in axes)
+        for ax in axes:
+            ax.set_ylim(lo, hi)
+
+    if title:
+        fig.suptitle(title, fontsize=13, fontweight="bold")
+
+    return fig, results
 
 
 # ============================================================

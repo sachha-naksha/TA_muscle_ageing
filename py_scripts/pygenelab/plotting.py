@@ -212,7 +212,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
                           figsize=(5, 6), scatter_size=4, scatter_alpha=0.6,
                           violin_width=0.7, box_width=0.35, jitter=0.15,
                           show_pvalue=True, delta_label=None,
-                          group_spacing=1.0, x_pad=0.5, ylim=None):
+                          group_spacing=1.0, x_pad=0.5, ylim=None, ax=None):
     """
     Create a combined violin-box plot with optional scatter points.
 
@@ -248,10 +248,20 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
         Half-width of the empty margin on each side of the outermost category,
         in data units. Independent of group_spacing — only controls outer
         padding. Must be >= violin_width / 2 to avoid clipping edge violins.
+    ax : matplotlib.axes.Axes or None, default None
+        If given, draw onto this existing axes instead of creating a new
+        figure (used to compose several panels into one figure). The parent
+        figure is returned and is NOT closed, so the caller controls layout
+        and saving. When None, a standalone (5, 6) figure is created and
+        closed (the original behavior).
     """
-    plt.clf()
-    fig, ax = plt.subplots(figsize=figsize)
-    plt.subplots_adjust(left=0.15, right=0.85, bottom=0.12, top=0.88)
+    own_fig = ax is None
+    if own_fig:
+        plt.clf()
+        fig, ax = plt.subplots(figsize=figsize)
+        plt.subplots_adjust(left=0.15, right=0.85, bottom=0.12, top=0.88)
+    else:
+        fig = ax.figure
 
     # ── y-axis limits ──────────────────────────────────────────────
     if ylim is not None:
@@ -395,7 +405,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
 
     # ── titles & labels ────────────────────────────────────────────
     if title:
-        plt.title(title, pad=20)
+        ax.set_title(title, pad=20)
 
     if delta_label:
         ax.text(
@@ -431,7 +441,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
     ax.set_ylabel('')
     ax.yaxis.grid(False)
 
-    sns.despine(offset=5, trim=True,
+    sns.despine(ax=ax, offset=5, trim=True,
                 bottom=(x_ticks is None), right=True)
 
     if x_ticks is not None:
@@ -441,7 +451,8 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
     if x_ticks is not None:
         ax.set_xticklabels(x_ticks, rotation=rotation, ha='right')
 
-    plt.close()
+    if own_fig:
+        plt.close(fig)
     return fig
 
 
