@@ -212,12 +212,17 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
                           figsize=(5, 6), scatter_size=4, scatter_alpha=0.6,
                           violin_width=0.7, box_width=0.35, jitter=0.15,
                           show_pvalue=True, delta_label=None,
-                          group_spacing=1.0, x_pad=0.5, ylim=None, ax=None):
+                          group_spacing=1.0, x_pad=0.5, ylim=None, ax=None,
+                          show_violin=True):
     """
     Create a combined violin-box plot with optional scatter points.
 
     Parameters
     ----------
+    show_violin : bool, default True
+        Draw the violin bodies behind the boxes. Set False for a box-only
+        plot (the boxes, whiskers, significance bars, and styling are
+        unchanged — only the violins are omitted).
     show_scatter : bool, default True
         Overlay individual data points as a strip plot.
     figsize : tuple, default (5, 6)
@@ -310,12 +315,13 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
         )
 
     # ── violin plot ────────────────────────────────────────────────
-    sns.violinplot(
-        data=data, x=x_var, y=y_var,
-        order=categories, palette=palette,
-        inner=None, linewidth=0, saturation=1.0,
-        alpha=0.45, width=violin_width, cut=0, ax=ax,
-    )
+    if show_violin:
+        sns.violinplot(
+            data=data, x=x_var, y=y_var,
+            order=categories, palette=palette,
+            inner=None, linewidth=0, saturation=1.0,
+            alpha=0.45, width=violin_width, cut=0, ax=ax,
+        )
 
     # ── box plot (skeleton only – we colour it below) ──────────────
     sns.boxplot(
@@ -541,6 +547,334 @@ def plot_gene_expression_by_group(
 
     # return dataframe and figure
     return plot_df, fig
+
+
+# plot_gene_box_by_group
+def plot_gene_box_by_group(
+    adata,
+    gene,
+    group_col,
+    layer="lognorm",
+    *,
+    palette=None,
+    group_order=None,
+    title=None,
+    rotation=45,
+    show_scatter=False,
+    scatter_size=4,
+    scatter_alpha=0.6,
+    show_pvalue=False,
+    delta_label=None,
+    annotate_delta=True,
+    group_spacing=1.0,
+    x_pad=0.5,
+    figsize=(5, 6),
+    ylim=None,
+    dropna=True,
+):
+    """
+    box plot (no violin) of one gene's per-cell expression across groups.
+
+    pulls per-cell expression for `gene` from `adata.layers[layer]` (set
+    layer=None to use adata.X) via `scanpy.get.obs_df`, the same way
+    `animate_gene_along_pseudotime` reads its lcpm/lognorm values, then draws
+    the box-only variant of `plot_violin_box_combo`.
+
+    set `show_scatter=True` to overlay per-cell points; `scatter_size` and
+    `scatter_alpha` control the marker size and transparency.
+
+    significance between groups is shown as asterisks (*, **, ***) on the bars
+    when `show_pvalue=False`, and as `p = ... *` when True — identical to the
+    violin-box combo. when there are exactly two groups and `delta_label` is
+    not supplied, `annotate_delta=True` adds a Cliff's δ label (magnitude +
+    which group is higher) computed on the per-cell expression.
+
+    api:
+    # plot_gene_box_by_group(
+    #     adata,
+    #     gene="PDK4",
+    #     group_col="age_yrs",
+    #     layer="lognorm",
+    #     palette={"34": "#7B1FA2", "80": "#3D1F5C"},
+    #     group_order=["34", "80"],
+    #     title="Female Type II: PDK4",
+    # )
+
+    returns (plot_df, fig).
+    """
+    import scanpy as sc
+
+    # check gene exists
+    if gene not in adata.var_names:
+        raise ValueError(f"{gene} was not found in adata.var_names")
+
+    # check group column exists
+    if group_col not in adata.obs.columns:
+        raise ValueError(f"{group_col} was not found in adata.obs columns")
+
+    # check layer exists
+    if layer is not None and layer not in adata.layers:
+        raise ValueError(f"{layer} was not found in adata.layers")
+
+    # per-cell expression (lcpm/lognorm) + group, mirroring the animator
+    plot_df = sc.get.obs_df(
+        adata,
+        keys=[gene, group_col],
+        layer=layer,
+        use_raw=False,
+    )
+
+    # remove missing values if needed
+    if dropna:
+        plot_df = plot_df.dropna()
+    plot_df = plot_df.reset_index(drop=True)
+
+    # set default title
+    if title is None:
+        title = f"{gene} expression by {group_col}"
+
+    # Cliff's δ between the two groups, computed on per-cell expression
+    # (mirrors the DDR / cell-type panels' delta label)
+    if delta_label is None and annotate_delta:
+        groups = (
+            list(group_order)
+            if group_order is not None
+            else sorted(plot_df[group_col].astype(str).unique())
+        )
+        if len(groups) == 2:
+            g1, g2 = groups
+            x = plot_df.loc[plot_df[group_col].astype(str) == str(g1), gene]
+            y = plot_df.loc[plot_df[group_col].astype(str) == str(g2), gene]
+            if len(x) and len(y):
+                delta = cliffs_delta(x=x, y=y)
+                if delta > 0:
+                    higher_group = g1
+                elif delta < 0:
+                    higher_group = g2
+                else:
+                    higher_group = "similar"
+                delta_label = (
+                    f"Cliff's δ = {abs(delta):.3f} (higher in {higher_group})"
+                )
+
+    # box-only version of the canonical violin-box combo
+    fig = plot_violin_box_combo(
+        data=plot_df,
+        x_var=group_col,
+        y_var=gene,
+        title=title,
+        x_ticks=group_order,
+        palette=palette,
+        rotation=rotation,
+        show_scatter=show_scatter,
+        scatter_size=scatter_size,
+        scatter_alpha=scatter_alpha,
+        figsize=figsize,
+        show_pvalue=show_pvalue,
+        delta_label=delta_label,
+        group_spacing=group_spacing,
+        x_pad=x_pad,
+        ylim=ylim,
+        show_violin=False,
+    )
+
+    # return dataframe and figure
+    return plot_df, fig
+
+
+# plot_gene_mean_trend_by_group
+def plot_gene_mean_trend_by_group(
+    adata,
+    gene,
+    group_col,
+    layer="lognorm",
+    *,
+    palette=None,
+    group_order=None,
+    error="sem",
+    title=None,
+    rotation=45,
+    show_pvalue=False,
+    delta_label=None,
+    annotate_delta=True,
+    figsize=(5, 6),
+    ylim=None,
+    connect=False,
+    line_color="0.4",
+    marker_size=10,
+    mean_bar_width=0.3,
+    dropna=True,
+):
+    """
+    mean-marker plot of one gene's per-cell expression across groups: one mean
+    dot per group (coloured by `palette`) sitting on a short horizontal mean
+    bar, with error bars. designed for sparse genes whose box/violin collapses
+    to a flat line at zero (e.g. >75% zero-expressing cells) so the
+    distribution is unreadable — the per-group mean stays informative.
+
+    by default the groups are NOT joined by a line (`connect=False`); set
+    `connect=True` to draw a connecting trend line through the means.
+    `mean_bar_width` is the half-width (in x data units) of the horizontal mean
+    bar; set 0 to draw only the dot.
+
+    pulls per-cell expression for `gene` from `adata.layers[layer]` (set
+    layer=None to use adata.X) via `scanpy.get.obs_df`, exactly like
+    `plot_gene_box_by_group`.
+
+    error : {"sem", "std", "ci95"}, default "sem"
+        error-bar half-width per group. "ci95" is the normal-approx 1.96*SEM.
+
+    significance between groups is shown as asterisks (*, **, ***) on a bar when
+    `show_pvalue=False`, else `p = ... *` (Mann-Whitney on per-cell values,
+    same test as the violin-box combo). when there are exactly two groups and
+    `delta_label` is not supplied, `annotate_delta=True` adds a Cliff's δ label.
+
+    returns (summary_df, fig) where summary_df has one row per group with
+    columns [group_col, "n", "mean", "sem", "std", "err"].
+    """
+    import scanpy as sc
+
+    # check inputs
+    if gene not in adata.var_names:
+        raise ValueError(f"{gene} was not found in adata.var_names")
+    if group_col not in adata.obs.columns:
+        raise ValueError(f"{group_col} was not found in adata.obs columns")
+    if layer is not None and layer not in adata.layers:
+        raise ValueError(f"{layer} was not found in adata.layers")
+    if error not in ("sem", "std", "ci95"):
+        raise ValueError(f"error must be 'sem', 'std', or 'ci95' (got {error!r})")
+
+    # per-cell expression (lcpm/lognorm) + group, mirroring the animator
+    cell_df = sc.get.obs_df(adata, keys=[gene, group_col], layer=layer, use_raw=False)
+    if dropna:
+        cell_df = cell_df.dropna()
+    cell_df[group_col] = cell_df[group_col].astype(str)
+
+    # group order (youngest -> oldest for numeric-looking labels)
+    if group_order is not None:
+        groups = [str(g) for g in group_order]
+    else:
+        groups = sorted(
+            cell_df[group_col].unique(),
+            key=lambda x: float(x) if str(x).replace('.', '').isdigit() else x,
+        )
+
+    # per-group mean / spread
+    rows = []
+    for g in groups:
+        v = cell_df.loc[cell_df[group_col] == g, gene].values
+        n = len(v)
+        mean = np.nan if n == 0 else float(np.mean(v))
+        std = float(np.std(v, ddof=1)) if n > 1 else 0.0
+        sem = std / np.sqrt(n) if n > 0 else 0.0
+        err = {"sem": sem, "std": std, "ci95": 1.96 * sem}[error]
+        rows.append({group_col: g, "n": n, "mean": mean,
+                     "sem": sem, "std": std, "err": err})
+    summary_df = pd.DataFrame(rows)
+
+    # ── figure ─────────────────────────────────────────────────────
+    plt.clf()
+    fig, ax = plt.subplots(figsize=figsize)
+    plt.subplots_adjust(left=0.15, right=0.85, bottom=0.12, top=0.88)
+
+    x = np.arange(len(groups))
+    means = summary_df["mean"].values
+    errs = summary_df["err"].values
+
+    # optional connecting trend line through the means (off by default)
+    if connect:
+        ax.plot(x, means, "-", color=line_color, lw=1.5, zorder=1)
+
+    # one coloured mean marker (dot + horizontal mean bar) + error bar per group
+    for xi, g, m, e in zip(x, groups, means, errs):
+        color = palette[g] if palette is not None else None
+        if mean_bar_width and np.isfinite(m):
+            ax.hlines(m, xi - mean_bar_width, xi + mean_bar_width,
+                      color=color, linewidth=2.0, zorder=2)
+        ax.errorbar(
+            xi, m, yerr=e, fmt="o", ms=marker_size,
+            color=color, ecolor=color, capsize=4, elinewidth=1.5,
+            mec="white", mew=1.0, zorder=3,
+        )
+
+    # ── significance bars (Mann-Whitney on per-cell values) ────────
+    significance_info = calculate_pairwise_significance(
+        cell_df, groups, group_col, gene,
+    )
+    finite = [m + e for m, e in zip(means, errs) if np.isfinite(m)]
+    y_top = max(finite) if finite else 1.0
+    y_bot = min([m for m in means if np.isfinite(m)] + [0.0])
+    y_range_plot = (y_top - y_bot) or 1.0
+    bar_spacing = y_range_plot * 0.12
+    bar_tips = y_range_plot * 0.03
+    bar_height = y_top + bar_spacing
+
+    for (i, j), sig_data in significance_info.items():
+        if sig_data["significance"] != "ns":
+            if not show_pvalue:
+                text = sig_data["significance"]
+            else:
+                p = sig_data["p-value"]
+                text = (f"p = {p:.2e} {sig_data['significance']}" if p < 0.00005
+                        else f"p = {p:.4f} {sig_data['significance']}")
+            ax.plot(
+                [i, i, j, j],
+                [bar_height, bar_height + bar_tips, bar_height + bar_tips, bar_height],
+                color="black", linewidth=0.8,
+            )
+            ax.text((i + j) * 0.5, bar_height + bar_tips, text,
+                    ha="center", va="bottom", fontsize=8)
+            bar_height += bar_spacing
+
+    # ── Cliff's δ label (two groups) ───────────────────────────────
+    if delta_label is None and annotate_delta and len(groups) == 2:
+        g1, g2 = groups
+        xv = cell_df.loc[cell_df[group_col] == g1, gene]
+        yv = cell_df.loc[cell_df[group_col] == g2, gene]
+        if len(xv) and len(yv):
+            delta = cliffs_delta(x=xv, y=yv)
+            higher_group = g1 if delta > 0 else g2 if delta < 0 else "similar"
+            delta_label = (
+                f"Cliff's δ = {abs(delta):.3f} (higher in {higher_group})"
+            )
+
+    if delta_label:
+        ax.text(
+            0.02, 0.98, delta_label,
+            transform=ax.transAxes, ha="left", va="top",
+            fontsize=9, fontweight="bold",
+            bbox=dict(facecolor="white", edgecolor="lightgray",
+                      boxstyle="round,pad=0.3", alpha=0.85),
+            zorder=10,
+        )
+
+    # ── limits / titles / cosmetics ────────────────────────────────
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    else:
+        ax.set_ylim(y_bot - y_range_plot * 0.08, bar_height + bar_spacing * 0.5)
+
+    if title is None:
+        title = f"{gene} mean expression by {group_col}"
+    ax.set_title(title, pad=20)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(groups, rotation=rotation, ha="right")
+    ax.set_xlim(-0.5, len(groups) - 0.5)
+
+    ax.minorticks_off()
+    ax.tick_params(axis="x", which="major", top=False)
+    ax.tick_params(axis="y", which="major", right=False, width=0.8)
+    ax.spines["left"].set_linewidth(0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.setp(ax.get_yticklabels(), weight="bold")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.yaxis.grid(False)
+
+    plt.close(fig)
+    return summary_df, fig
 
 
 # plot_multiple_gene_expression

@@ -375,6 +375,8 @@ def plot_score_by_group(
     title=None,
     rotation=45,
     show_scatter=True,
+    scatter_size=4,
+    scatter_alpha=0.6,
     figsize=(5, 6),
     show_pvalue=True,
     delta_label=None,
@@ -384,7 +386,8 @@ def plot_score_by_group(
 ):
     """
     plot one pathway score across groups using the canonical violin-box combo.
-    returns (plot_df, fig).
+    `scatter_size` / `scatter_alpha` control the per-cell dots when
+    `show_scatter=True`. returns (plot_df, fig).
     """
     plot_df = prepare_group_score_df(
         adata=adata,
@@ -400,6 +403,8 @@ def plot_score_by_group(
         palette=palette,
         rotation=rotation,
         show_scatter=show_scatter,
+        scatter_size=scatter_size,
+        scatter_alpha=scatter_alpha,
         figsize=figsize,
         show_pvalue=show_pvalue,
         delta_label=delta_label,
