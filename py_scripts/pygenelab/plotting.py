@@ -133,6 +133,55 @@ def plot_gene_contribution_heatmap(
     return heatmap_df, fig, ax
 
 
+def plot_expression_shift_heatmap(
+    shift_df,
+    *,
+    cmap="RdBu_r",
+    center=0,
+    annot=True,
+    fmt=".1f",
+    vmin=None,
+    vmax=None,
+    figsize=(6, 8),
+    title="Driver gene expression shift",
+    cbar_label="mean z-scored expression",
+    xlabel="",
+):
+    """heatmap of per-group gene expression (genes x groups), diverging around
+    `center`. Unlike `plot_gene_contribution_heatmap` (which shows each gene's
+    correlation with a score), this shows the genes' actual expression shift
+    across groups -- red = above-average in that group, blue = below. Rows are
+    kept in the order of `shift_df.index` (do any driver-strength ranking before
+    calling). Symmetric vmin/vmax default to the 99th pct of |values|.
+    returns (df, fig, ax)."""
+    if vmax is None:
+        vmax = float(np.nanpercentile(np.abs(shift_df.values), 99)) or 1.0
+    if vmin is None:
+        vmin = -vmax
+
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.heatmap(
+        shift_df,
+        annot=annot,
+        fmt=fmt,
+        cmap=cmap,
+        center=center,
+        linewidths=0.5,
+        linecolor="white",
+        vmin=vmin,
+        vmax=vmax,
+        cbar_kws=dict(label=cbar_label),
+        ax=ax,
+    )
+    ax.set_yticklabels(list(shift_df.index), rotation=0, fontstyle="italic")
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("")
+    plt.tight_layout()
+    plt.close(fig)
+    return shift_df, fig, ax
+
+
 # plot_violin_box_combo
 def _compress_group_spacing(ax, n_categories, spacing, x_pad=0.5):
     """move categorical artists from integer positions (0,1,2,...) to positions

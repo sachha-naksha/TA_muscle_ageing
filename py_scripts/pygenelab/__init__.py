@@ -25,3 +25,5 @@ from .llm_categorize import (
     categorize_pathways_via_llm,
     categorize_enriched_plot_df,
 )
+# transfer learning / SLIDE cross-prediction (access as pgl.crossprediction.*)
+from . import crossprediction

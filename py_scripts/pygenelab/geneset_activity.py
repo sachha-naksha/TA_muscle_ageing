@@ -39,6 +39,7 @@ from .data import (
 from .plotting import (
     plot_violin_box_combo,
     plot_gene_contribution_heatmap,
+    plot_expression_shift_heatmap,
 )
 from .utils import (
     calculate_score_cliffs_delta,
@@ -718,35 +719,131 @@ def compute_driver_genes_per_group(
     return ranked
 
 
+def compute_group_expression_shift(
+    adata,
+    genes,
+    group_col,
+    groups,
+    *,
+    layer=None,
+    standardize=True,
+):
+    """per-gene mean expression per group -- the "expression shift" view.
+
+    with `standardize=True` (default) each gene is z-scored across ALL cells
+    first (scanpy matrixplot style), so the returned value is the mean z-scored
+    expression in each group: positive = above this gene's overall average in
+    that group, negative = below. This shows how driver genes actually move
+    between groups (e.g. up in old), as opposed to their within-group
+    correlation with a score.
+
+    genes: list of gene symbols (those absent from adata.var_names are dropped).
+    returns a DataFrame indexed by gene (input order preserved), columns=groups.
+    """
+    present = [g for g in genes if g in adata.var_names]
+    sub = adata[:, present]
+    M = sub.layers[layer] if (layer and layer in adata.layers) else sub.X
+    M = M.toarray() if hasattr(M, "toarray") else np.asarray(M)
+    M = pd.DataFrame(M, columns=present, index=adata.obs_names)
+    if standardize:
+        M = (M - M.mean(axis=0)) / M.std(axis=0).replace(0, 1.0)
+
+    grp = adata.obs[group_col].astype(str).values
+    cols = [str(g) for g in groups]
+    out = pd.DataFrame(
+        {c: M.values[grp == c].mean(axis=0) for c in cols},
+        index=present,
+    )
+    return out
+
+
+def _rank_driver_genes(ranked_dfs, top_n, sort_by="abs_max",
+                       gene_col="gene", corr_col="spearman_corr"):
+    """select the top_n driver genes (by their score-correlation strength) from
+    a `compute_driver_genes_per_group` result, returned in ranked order. Used to
+    keep driver *selection/ordering* by correlation even when the heatmap
+    *displays* expression shift."""
+    cats = [df[[gene_col, corr_col]].rename(columns={corr_col: cat})
+            for cat, df in ranked_dfs.items()]
+    merged = cats[0]
+    for d in cats[1:]:
+        merged = pd.merge(merged, d, on=gene_col, how="outer")
+    catcols = list(ranked_dfs.keys())
+    merged[catcols] = merged[catcols].fillna(0)
+    if sort_by == "max":
+        s = merged[catcols].max(axis=1)
+    elif sort_by == "mean":
+        s = merged[catcols].mean(axis=1)
+    elif sort_by == "abs_mean":
+        s = merged[catcols].abs().mean(axis=1)
+    else:  # "abs_max" (default)
+        s = merged[catcols].abs().max(axis=1)
+    merged = merged.assign(_s=s).sort_values("_s", ascending=False).head(top_n)
+    return merged[gene_col].tolist()
+
+
 def plot_driver_heatmap(
     ranked_dfs,
     *,
     top_n=20,
     title="Driver Gene Contribution",
-    cmap="coolwarm",
+    cmap=None,
     sort_by="abs_max",
     figsize=(6, 8),
     vmin=None,
     vmax=None,
+    adata=None,
+    group_col=None,
+    groups=None,
+    layer=None,
+    standardize=True,
+    value=None,
+    annot=True,
 ):
+    """heatmap of top driver genes across groups. Two display modes:
+
+    * ``value="correlation"`` (legacy): each gene's Spearman correlation with the
+      score, per group -- "which genes drive the score variance within each
+      group". Wraps ``plot_gene_contribution_heatmap``.
+    * ``value="expression"``: each gene's mean z-scored EXPRESSION per group --
+      "how the driver genes actually shift between groups" (red = up in that
+      group). Requires ``adata`` + ``group_col``; genes are still *selected and
+      ordered* by their score-correlation in ``ranked_dfs`` (driver strength).
+
+    Default (``value=None``): expression when ``adata`` is supplied, else
+    correlation -- so existing correlation calls are unchanged. returns
+    ``(df, fig, ax)``.
     """
-    heatmap of top driver genes across groups.
-    wraps pygenelab.plotting.plot_gene_contribution_heatmap.
-    """
-    return plot_gene_contribution_heatmap(
-        ranked_dfs=ranked_dfs,
-        top_n=top_n,
-        gene_col="gene",
-        corr_col="spearman_corr",
-        sort_by=sort_by,
-        figsize=figsize,
-        cmap=cmap,
-        title=title,
-        annot=True,
-        fmt=".2f",
-        vmin=vmin,
-        vmax=vmax,
-    )
+    mode = value or ("expression" if adata is not None else "correlation")
+
+    if mode == "correlation":
+        return plot_gene_contribution_heatmap(
+            ranked_dfs=ranked_dfs,
+            top_n=top_n,
+            gene_col="gene",
+            corr_col="spearman_corr",
+            sort_by=sort_by,
+            figsize=figsize,
+            cmap=cmap or "coolwarm",
+            title=title,
+            annot=annot,
+            fmt=".2f",
+            vmin=vmin,
+            vmax=vmax,
+        )
+
+    if adata is None or group_col is None:
+        raise ValueError("value='expression' needs adata and group_col")
+    if groups is None:
+        groups = list(ranked_dfs.keys())
+
+    genes = _rank_driver_genes(ranked_dfs, top_n=top_n, sort_by=sort_by)
+    shift = compute_group_expression_shift(
+        adata, genes, group_col, groups, layer=layer, standardize=standardize)
+    shift = shift.reindex([g for g in genes if g in shift.index])
+    return plot_expression_shift_heatmap(
+        shift, cmap=cmap or "RdBu_r", annot=annot,
+        vmin=vmin, vmax=vmax, figsize=figsize, title=title)
 
 
 # ============================================================
