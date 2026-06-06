@@ -7,6 +7,7 @@ functions relating to developing plots
 # imports
 import numpy as np
 import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
@@ -22,6 +23,66 @@ from matplotlib.path import Path
 import matplotlib.patches as patches
 
 from .utils import calculate_pairwise_significance, cliffs_delta
+
+
+# ============================================================
+# global publication / Illustrator style
+# ============================================================
+# Default typography for every pygenelab figure: 6 pt Myriad Pro with editable
+# text in vector exports, so a saved SVG/PDF drops straight into Illustrator
+# with live, restyleable text already set in the right font and size.
+PUB_FONT_SIZE = 6
+PUB_FONT_FAMILY = "Myriad Pro"
+
+
+def set_pub_style(font_size=PUB_FONT_SIZE, font_family=PUB_FONT_FAMILY):
+    """
+    set the global matplotlib style shared by all pygenelab plots:
+    `font_size`-pt `font_family` text (every text element — titles, labels,
+    ticks, legends, annotations — uses the one size), thin Nature-style axes,
+    and *editable* text in vector output.
+
+    `svg.fonttype="none"` (plus `pdf/ps.fonttype=42`) keeps text as real text
+    rather than outlined paths, and matplotlib writes the requested
+    `font-family` list into the file verbatim — so even though Myriad Pro need
+    not be installed on this machine, the exported SVG/PDF carries
+    `font-family:'Myriad Pro',...` and Illustrator renders it in Myriad Pro at
+    `font_size` pt.
+
+    Applied once at import; call again (e.g. `pgl.set_pub_style(font_size=8)`)
+    to change the default for every subsequent figure.
+    """
+    # requested family first, then graceful fallbacks (deduped, order kept)
+    family_stack = list(dict.fromkeys(
+        [font_family, "Myriad Pro", "Arial", "Helvetica", "DejaVu Sans"]
+    ))
+    mpl.rcParams.update({
+        # ── editable vector text for Illustrator ──
+        "svg.fonttype":          "none",
+        "pdf.fonttype":          42,
+        "ps.fonttype":           42,
+        # ── one global font family + size for every text element ──
+        "font.family":           "sans-serif",
+        "font.sans-serif":       family_stack,
+        "font.size":             font_size,
+        "axes.titlesize":        font_size,
+        "axes.labelsize":        font_size,
+        "xtick.labelsize":       font_size,
+        "ytick.labelsize":       font_size,
+        "legend.fontsize":       font_size,
+        "legend.title_fontsize": font_size,
+        "figure.titlesize":      font_size,
+        # ── thin Nature-style rules ──
+        "axes.linewidth":        0.8,
+        "xtick.major.width":     0.8,
+        "ytick.major.width":     0.8,
+        "xtick.major.size":      3,
+        "ytick.major.size":      3,
+    })
+
+
+# apply at import so every notebook gets the style without boilerplate
+set_pub_style()
 
 
 # plot_gene_contribution_heatmap
@@ -443,7 +504,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
             text = f'p = {p_value:.4f} {sig_symbol}'
         ax.text(
             (start + end) * 0.5, height + bar_tips,
-            text, ha='center', va='bottom', fontsize=8,
+            text, ha='center', va='bottom',   # size inherits rcParams font.size
         )
 
     for (g1, g2), sig_data in significance_info.items():
@@ -466,7 +527,7 @@ def plot_violin_box_combo(data, x_var, y_var, title=None, x_ticks=None,
         ax.text(
             0.02, 0.98, delta_label,
             transform=ax.transAxes, ha='left', va='top',
-            fontsize=9, fontweight='bold',
+            fontweight='bold',   # size inherits rcParams font.size
             bbox=dict(facecolor='white', edgecolor='lightgray',
                       boxstyle='round,pad=0.3', alpha=0.85),
             zorder=10,

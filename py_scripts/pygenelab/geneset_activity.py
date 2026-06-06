@@ -557,7 +557,7 @@ def plot_score_by_celltype_panels(
             ax.set_ylim(lo, hi)
 
     if title:
-        fig.suptitle(title, fontsize=13, fontweight="bold")
+        fig.suptitle(title, fontweight="bold")   # size inherits figure.titlesize
 
     # remove from pyplot's registry so the inline backend doesn't auto-render
     # this figure on top of the caller displaying the returned object (which
@@ -672,7 +672,7 @@ def plot_score_grid_by_celltype(
         results[score_col] = row_results
 
     if suptitle:
-        fig.suptitle(suptitle, fontsize=14, fontweight="bold")
+        fig.suptitle(suptitle, fontweight="bold")   # size inherits figure.titlesize
 
     # remove from pyplot's registry so the inline backend doesn't auto-render
     # this figure on top of the caller displaying the returned object (which

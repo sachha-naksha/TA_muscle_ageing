@@ -27,23 +27,11 @@ from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
 
-# Nature-style + Illustrator-editable text. Applied at import so any notebook
-# that uses these plotting utils gets consistent typography without boilerplate.
-mpl.rcParams.update({
-    "svg.fonttype":      "none",
-    "ps.fonttype":       42,
-    "font.family":       "sans-serif",
-    "font.sans-serif":   ["Arial", "Helvetica", "DejaVu Sans"],
-    "axes.linewidth":    0.8,
-    "xtick.major.width": 0.8,
-    "ytick.major.width": 0.8,
-    "xtick.major.size":  3,
-    "ytick.major.size":  3,
-    "axes.labelsize":    11,
-    "xtick.labelsize":   10,
-    "ytick.labelsize":   10,
-    "legend.fontsize":   9,
-})
+# Nature-style + Illustrator-editable text. Use the shared pygenelab style
+# (6 pt Myriad Pro, editable SVG/PDF text) so every notebook gets consistent
+# typography without boilerplate, instead of overriding it with a local block.
+from .plotting import set_pub_style
+set_pub_style()
 
 
 def plot_lfs_dotplot_stacked(
