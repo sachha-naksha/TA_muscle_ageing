@@ -7,6 +7,7 @@ functions relating to modifying images
 # imports
 import io
 import math
+import re
 from PIL import Image
 from pathlib import Path
 import matplotlib as mpl
@@ -224,6 +225,58 @@ def save_editable_svg(
         transparent=transparent,
         dpi=dpi
     )
+
+    # return saved path
+    return output_path
+
+
+# save_illustrator_svg
+def save_illustrator_svg(
+    fig,
+    output_path,
+    bbox_inches="tight",
+    also_pdf=True
+):
+    """
+    save a matplotlib figure as an svg illustrator can open, plus a pdf sibling
+
+    matplotlib prepends an *external* svg 1.1 doctype
+    (`<!DOCTYPE svg PUBLIC ... svg11.dtd>`); illustrator tries to resolve that
+    dtd over the network and refuses the file when it cannot. stripping the
+    doctype leaves a plain, well-formed svg with the text still live
+    (svg.fonttype="none").
+
+    the pdf sibling is the more reliable route into illustrator and powerpoint:
+    pdf.fonttype=42 keeps the text as real text, and neither app has to parse svg.
+    """
+
+    # save_illustrator_svg
+    # api:
+    # save_illustrator_svg(
+    #     fig=fig,
+    #     output_path="figure.svg",
+    # )
+
+    # convert path to pathlib path
+    output_path = Path(output_path)
+
+    # make sure parent folder exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # keep text as editable text instead of paths
+    mpl.rcParams["svg.fonttype"] = "none"
+
+    # save figure as svg
+    fig.savefig(output_path, format="svg", bbox_inches=bbox_inches)
+
+    # drop the external doctype illustrator chokes on
+    svg = output_path.read_text()
+    svg = re.sub(r"<!DOCTYPE[^>]*>\s*", "", svg, count=1)
+    output_path.write_text(svg)
+
+    # save pdf sibling with live text (pdf.fonttype=42)
+    if also_pdf:
+        fig.savefig(output_path.with_suffix(".pdf"), format="pdf", bbox_inches=bbox_inches)
 
     # return saved path
     return output_path
