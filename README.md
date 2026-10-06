@@ -26,12 +26,9 @@ Data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313)
 
 ### Software dependencies
 
-No single lockfile is shipped yet; the analysis used separate environments per stage. Versions below are those recorded in the code; fill the
-remaining ones from `pip freeze` / `sessionInfo()`. <!-- TODO: export environment files -->
-
 | Stage | Environment | Key packages |
 |---|---|---|
-| Preprocessing, integration, annotation, gene-set scoring (`scripts/1_*` - `3_*`, `6_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
+| Preprocessing, integration, annotation, gene-set scoring (`scripts/1_*` - `3_*`, `5_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
 | Metacells (`scripts/slurm/metacell.sbatch`) | Python 3.11 (`metasheller-py311`) | scanpy, metashells |
 | **SLIDE, R (primary run, `scripts/4_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
 | Seurat analyses (`.Rmd` in `1_preproc/`, `2_single_nuc_inspection/`, `5_human_skm_multimodal/`) | R | Seurat, harmony, SingleR, SummarizedExperiment, ggplot2, dplyr, patchwork, openxlsx, EnhancedVolcano, MuDataSeurat, reticulate |
