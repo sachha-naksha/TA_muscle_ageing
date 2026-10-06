@@ -7,7 +7,6 @@ two batches and integrated, and compared with the public human skeletal-muscle a
 integration, cell-type annotation, gene-set activity, GRN/TF-knockout simulation, SLIDE latent-factor
 analysis, and cross-species transfer.
 
-Figure legends and Methods for Figure 1 are in [`manuscript/`](manuscript/figure1_legends_methods.tex).
 
 ## Related repositories
 
@@ -139,9 +138,6 @@ TA_muscle_ageing/
 │   ├── metacell.sbatch                       metacells per sample (metashells)
 │   ├── slide_R_runs.sbatch                   SLIDE (R) cross-validation
 │   └── tf_ko.sbatch                          CellOracle TF knockout array job
-├── manuscript/
-│   ├── figure1_legends_methods.tex
-│   └── figure1_legends_methods.docx
 └── py_scripts/
     ├── pygenelab/                            helper library (Python)
     │   ├── data.py, utils.py, images.py, plotting.py
