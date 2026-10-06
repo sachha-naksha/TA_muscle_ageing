@@ -44,8 +44,10 @@ Exact package versions: <!-- TODO: fill from environment export -->
 - The analysis in this repository runs on CPU. The SLURM scripts request 64 cores (`RM-shared`) or 64 GB RAM.
   <!-- TODO: state minimum RAM for the demo vs. full data -->
 - **MaxToki perturbation requires an NVIDIA GPU** (CUDA, x86). We provide a pre-built Apptainer image (`.sif`)
-  with the compiled code for running on SLURM; see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
-  <!-- TODO: add .sif download link / DOI -->
+  with the BioNeMo/MaxToki runtime for running on SLURM; see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
+  Image: [`maxtoki-perturb.sif`](https://zenodo.org/records/23177050/files/maxtoki-perturb.sif) (14.2 GB,
+  MD5 `537c5807ffa8d20b580a43c69858a484`), Zenodo record v1.1.0, [10.5281/zenodo.23177050](https://doi.org/10.5281/zenodo.23177050).
+  Model weights and the pipeline code are not in the image.
 - The demo (section 3) needs no non-standard hardware. <!-- TODO: confirm once the demo dataset exists -->
 
 ---
@@ -77,6 +79,11 @@ devtools::install_github("jishnu-lab/SLIDE")   # R >= 4.5.0 was used
 ```
 
 **MaxToki perturbation** is run separately on a GPU node, from a pre-built Apptainer `.sif` image; see https://github.com/sachha-naksha/maxtoki-perturb.
+
+```bash
+curl -L -O https://zenodo.org/records/23177050/files/maxtoki-perturb.sif
+md5sum maxtoki-perturb.sif    # 537c5807ffa8d20b580a43c69858a484
+```
 
 Typical install time on a SLURM CPU node: about 20 minutes for the Python environment, under one hour including R and SLIDE.
 
