@@ -108,10 +108,6 @@ The human female type II subset is the recommended demo (smaller, single sex). N
 `scripts/5_human_skm_multimodal/transfer_learning.ipynb` and `activity_score_trends.ipynb`.
 <!-- TODO: confirm which notebooks/paths read human_female_adata.h5ad, and point their input cell at data/ -->
 
-- **Expected output:** <!-- TODO: list figures/tables produced, with filenames -->
-- **Expected run time on a normal desktop computer:** <!-- TODO: measure -->
-- A smaller (~few-MB) subsample for a quick smoke test is still worth adding under `demo/`, since the journal asks for a *small* dataset. <!-- TODO optional -->
-
 ---
 
 ## 4. Instructions for use
