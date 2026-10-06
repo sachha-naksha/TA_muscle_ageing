@@ -207,8 +207,6 @@ Apache License 2.0; see [LICENSE](LICENSE).
 
 ## Citation
 
-This work builds on:
-
 - **SLIDE** (latent-factor analysis): Rahimikollu J, Xiao H, Rosengart A, Rosen ABI, Tabib T, Zdinak PM, He K, Bing X, Bunea F, Wegkamp M, Poholek AC, Joglekar AV, Lafyatis RA, Das J.
   SLIDE: Significant Latent Factor Interaction Discovery and Exploration across biological domains.
   *Nature Methods* 21(5):835-845 (2024). [doi:10.1038/s41592-024-02175-z](https://doi.org/10.1038/s41592-024-02175-z), [PMID 38374265](https://pubmed.ncbi.nlm.nih.gov/38374265/)
