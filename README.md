@@ -14,7 +14,7 @@ This analysis spans three code bases. All three are needed to reproduce the full
 
 | Component | Language | Where | Used for |
 |---|---|---|---|
-| This repository | Python, R, bash | https://github.com/sachha-naksha/TA_muscle_ageing | Everything except the two items below |
+| This repository | Python, R, bash | https://github.com/sachha-naksha/TA_muscle_ageing | scRNA analysis code |
 | SLIDE | **R** | https://github.com/jishnu-lab/SLIDE | Latent-factor discovery and cross-validation (`scripts/4_slide_analysis/slide_runs.R`) |
 | maxtoki-perturb | Python | https://github.com/sachha-naksha/maxtoki-perturb | MaxToki in-silico gene perturbation (not run from this repo) |
 
