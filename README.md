@@ -1,9 +1,9 @@
 # TA muscle ageing: ERCC1 Skm-KO snRNA-seq analysis
 
 Code for the single-nucleus analysis of tibialis anterior (TA) muscle from skeletal-muscle-specific
-ERCC1 knockout (Skm-KO) and Control mice (3 replicates x genotype x sex, 12 samples), integrated with
-an in-house young/old mouse aging-reference cohort, and compared with the public human skeletal-muscle
-ageing atlas (Lai et al., *Nature* 2024). The repository covers preprocessing and
+ERCC1 knockout (Skm-KO) and Control mice (3 replicates x genotype x sex, 12 samples), processed in
+two batches and integrated, and compared with the public human skeletal-muscle ageing atlas
+(Lai et al., *Nature* 2024). The repository covers preprocessing and
 integration, cell-type annotation, gene-set activity, GRN/TF-knockout simulation, SLIDE latent-factor
 analysis, and cross-species transfer.
 
