@@ -15,7 +15,7 @@ This analysis spans three code bases. All three are needed to reproduce the full
 | Component | Language | Where | Used for |
 |---|---|---|---|
 | This repository | Python, R, bash | https://github.com/sachha-naksha/TA_muscle_ageing | Everything except the two items below |
-| SLIDE | **R** | https://github.com/jishnu-lab/SLIDE | Latent-factor discovery and cross-validation (`py_scripts/5_slide_analysis/slide_runs.R`) |
+| SLIDE | **R** | https://github.com/jishnu-lab/SLIDE | Latent-factor discovery and cross-validation (`scripts/5_slide_analysis/slide_runs.R`) |
 | maxtoki-perturb | Python | https://github.com/sachha-naksha/maxtoki-perturb | MaxToki in-silico gene perturbation (not run from this repo) |
 
 Pinned versions used for the manuscript:
@@ -37,10 +37,10 @@ remaining ones from `pip freeze` / `sessionInfo()`. <!-- TODO: export environmen
 
 | Stage | Environment | Key packages |
 |---|---|---|
-| Preprocessing, integration, annotation, gene-set scoring (`py_scripts/1_*` - `3_*`, `6_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
+| Preprocessing, integration, annotation, gene-set scoring (`scripts/1_*` - `3_*`, `6_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
 | Metacells (`bash_scripts/metacell.sbatch`) | Python 3.11 (`metasheller-py311`) | scanpy, metashells |
-| GRN / TF-KO (`py_scripts/4_grn_tf_enrichment`, `bash_scripts/tf_ko.sbatch`) | `celloracle_env` | CellOracle, scvelo, velocyto, cellrank, palantir, loompy |
-| **SLIDE, R (primary run, `py_scripts/5_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
+| GRN / TF-KO (`scripts/4_grn_tf_enrichment`, `bash_scripts/tf_ko.sbatch`) | `celloracle_env` | CellOracle, scvelo, velocyto, cellrank, palantir, loompy |
+| **SLIDE, R (primary run, `scripts/5_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
 | Seurat analyses (`.Rmd` in `1_preproc/`, `2_single_nuc_inspection/`, `6_human_skm_multimodal/`) | R | Seurat, harmony, SingleR, SummarizedExperiment, ggplot2, dplyr, patchwork, openxlsx, EnhancedVolcano, MuDataSeurat, reticulate |
 
 Exact package versions: <!-- TODO: fill from environment export -->
@@ -71,11 +71,11 @@ cd TA_muscle_ageing
 conda create -n ta_muscle python=3.12 -y
 conda activate ta_muscle
 pip install scanpy anndata scvi-tools==1.4.0 decoupler gseapy statsmodels scikit-learn seaborn plotnine
-pip install -e py_scripts/pygenelab        # local helper library; needs a pyproject.toml, see TODO
+pip install -e scripts/pygenelab        # local helper library; needs a pyproject.toml, see TODO
 ```
 
-<!-- TODO: py_scripts/pygenelab has no pyproject.toml/setup.py, so `pip install -e` will not work yet.
-     Add one (or document `export PYTHONPATH=$PWD/py_scripts`). -->
+<!-- TODO: scripts/pygenelab has no pyproject.toml/setup.py, so `pip install -e` will not work yet.
+     Add one (or document `export PYTHONPATH=$PWD/scripts`). -->
 
 **GRN / TF-KO environment**: follow the [CellOracle installation guide](https://morris-lab.github.io/CellOracle.documentation/),
 then `pip install scvelo velocyto cellrank palantir`.
@@ -115,7 +115,7 @@ md5sum human_female_adata.h5ad    # macOS: md5 human_female_adata.h5ad
 ### Run the demo
 
 The human female type II subset is the recommended demo (smaller, single sex). Notebooks to run on it:
-`py_scripts/6_human_skm_multimodal/transfer_learning.ipynb` and `activity_score_trends.ipynb`.
+`scripts/6_human_skm_multimodal/transfer_learning.ipynb` and `activity_score_trends.ipynb`.
 <!-- TODO: confirm which notebooks/paths read human_female_adata.h5ad, and point their input cell at data/ -->
 
 - **Expected output:** <!-- TODO: list figures/tables produced, with filenames -->
@@ -138,7 +138,7 @@ TA_muscle_ageing/
 │   ├── metacell.sbatch                       metacells per sample (metashells)
 │   ├── slide_R_runs.sbatch                   SLIDE (R) cross-validation
 │   └── tf_ko.sbatch                          CellOracle TF knockout array job
-└── py_scripts/
+└── scripts/
     ├── pygenelab/                            helper library (Python)
     │   ├── data.py, utils.py, images.py, plotting.py
     │   ├── geneset_activity.py, deg_functional_enrichment.py, llm_categorize.py
@@ -178,22 +178,22 @@ TA_muscle_ageing/
 
 Run the stages in order. Each notebook has a paths cell at the top; edit it for your data.
 
-1. **Preprocess and integrate**: `py_scripts/1_preproc/` (Cell Ranger + CellBender output to a scVI/scANVI-integrated `.h5ad`).
-2. **Annotate and inspect**: `py_scripts/2_single_nuc_inspection/`.
-3. **Gene-set activity**: `py_scripts/3_geneset_scores/` (uses `pygenelab.geneset_activity`).
-4. **Metacells and SLIDE input (Python, preprocessing only)**: `bash_scripts/metacell.sbatch`, then `py_scripts/5_slide_analysis/prep_data_slide.ipynb`
+1. **Preprocess and integrate**: `scripts/1_preproc/` (Cell Ranger + CellBender output to a scVI/scANVI-integrated `.h5ad`).
+2. **Annotate and inspect**: `scripts/2_single_nuc_inspection/`.
+3. **Gene-set activity**: `scripts/3_geneset_scores/` (uses `pygenelab.geneset_activity`).
+4. **Metacells and SLIDE input (Python, preprocessing only)**: `bash_scripts/metacell.sbatch`, then `scripts/5_slide_analysis/prep_data_slide.ipynb`
    writes the `*_X.csv` (metacell x gene) and `*_Y.csv` (labels) files.
-5. **SLIDE (R; all SLIDE runs are done in R)**: edit `py_scripts/5_slide_analysis/config_optimize_slide.yaml` (`x_path`, `y_path`, `out_path`, `delta`, `lambda`, `spec`, ...), then
+5. **SLIDE (R; all SLIDE runs are done in R)**: edit `scripts/5_slide_analysis/config_optimize_slide.yaml` (`x_path`, `y_path`, `out_path`, `delta`, `lambda`, `spec`, ...), then
    ```r
    library(SLIDE)
-   input_params <- yaml::yaml.load_file("py_scripts/5_slide_analysis/config_optimize_slide.yaml")
+   input_params <- yaml::yaml.load_file("scripts/5_slide_analysis/config_optimize_slide.yaml")
    SLIDE::checkDataParams(input_params)
    SLIDE::optimizeSLIDE(input_params, sink_file = FALSE)   # grid over delta/lambda
    SLIDE::SLIDEcv("<out_path>/yaml_params.yaml", nrep = 2000, k = 20)   # final CV
    ```
    On SLURM: `sbatch bash_scripts/slide_R_runs.sbatch` (edit the script path first).
    See the [SLIDE repository](https://github.com/jishnu-lab/SLIDE) for parameter documentation.
-6. **GRN and TF knockout**: `py_scripts/4_grn_tf_enrichment/` then `sbatch bash_scripts/tf_ko.sbatch`.
+6. **GRN and TF knockout**: `scripts/4_grn_tf_enrichment/` then `sbatch bash_scripts/tf_ko.sbatch`.
 7. **MaxToki perturbation**: see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
 
 Absolute paths in `bash_scripts/` and some notebooks point to our cluster storage
@@ -203,12 +203,12 @@ Absolute paths in `bash_scripts/` and some notebooks point to our cluster storag
 
 | Manuscript item | Code |
 |---|---|
-| Fig. 1A, F: integration and UMAP | `py_scripts/1_preproc/integration.ipynb`, `2_single_nuc_inspection/re_cluster.ipynb` |
-| Fig. 1B, C, E: composition, markers | `py_scripts/2_single_nuc_inspection/snRNA_related.ipynb` |
-| Fig. 1D: transcriptional heterogeneity | `py_scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
-| Fig. 1G: gene-set activity | `py_scripts/3_geneset_scores/geneset_activity.ipynb` |
-| SLIDE latent factors | `py_scripts/5_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `5_slide_analysis/LF_viz.ipynb` |
-| TF-KO simulations | `py_scripts/4_grn_tf_enrichment/4_TF_KO_sim.ipynb`, `bash_scripts/tf_ko.sbatch` |
+| Fig. 1A, F: integration and UMAP | `scripts/1_preproc/integration.ipynb`, `2_single_nuc_inspection/re_cluster.ipynb` |
+| Fig. 1B, C, E: composition, markers | `scripts/2_single_nuc_inspection/snRNA_related.ipynb` |
+| Fig. 1D: transcriptional heterogeneity | `scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
+| Fig. 1G: gene-set activity | `scripts/3_geneset_scores/geneset_activity.ipynb` |
+| SLIDE latent factors | `scripts/5_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `5_slide_analysis/LF_viz.ipynb` |
+| TF-KO simulations | `scripts/4_grn_tf_enrichment/4_TF_KO_sim.ipynb`, `bash_scripts/tf_ko.sbatch` |
 
 Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. The only public dataset is the human skeletal-muscle ageing atlas (Lai et al., *Nature* 629:154-164, 2024).
 

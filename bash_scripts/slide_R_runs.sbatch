@@ -21,5 +21,5 @@ which $R_BIN
 # Run your script
 ############################
 
-$R_BIN /ix/djishnu/Akanksha/analysis_code/snRNA_TA_muscle_analysis/TA_muscle_code/py_scripts/5_slide_analysis/slide_runs.R
+$R_BIN /ix/djishnu/Akanksha/analysis_code/snRNA_TA_muscle_analysis/TA_muscle_code/scripts/5_slide_analysis/slide_runs.R
 

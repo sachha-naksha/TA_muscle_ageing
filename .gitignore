@@ -2,10 +2,10 @@
 *.h5ad
 
 # Logs and temporary files
-py_scripts/preproc/lightning_logs
+scripts/preproc/lightning_logs
 bash_scripts/*.log
-py_scripts/slide_analysis/tutorial_outputs
-py_scripts/slide_analysis/meta_cell_outputs
-py_scripts/slide_analysis/figures
-py_scripts/pygenelab/__pycache__/*
-py_scripts/*/Output/*
+scripts/slide_analysis/tutorial_outputs
+scripts/slide_analysis/meta_cell_outputs
+scripts/slide_analysis/figures
+scripts/pygenelab/__pycache__/*
+scripts/*/Output/*
