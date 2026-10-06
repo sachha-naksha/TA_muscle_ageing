@@ -207,4 +207,14 @@ Apache License 2.0; see [LICENSE](LICENSE).
 
 ## Citation
 
-<!-- TODO: add manuscript citation / Zenodo DOI -->
+This work builds on:
+
+- **SLIDE** (latent-factor analysis): Rahimikollu J, Xiao H, Rosengart A, Rosen ABI, Tabib T, Zdinak PM, He K, Bing X, Bunea F, Wegkamp M, Poholek AC, Joglekar AV, Lafyatis RA, Das J.
+  SLIDE: Significant Latent Factor Interaction Discovery and Exploration across biological domains.
+  *Nature Methods* 21(5):835-845 (2024). [doi:10.1038/s41592-024-02175-z](https://doi.org/10.1038/s41592-024-02175-z), [PMID 38374265](https://pubmed.ncbi.nlm.nih.gov/38374265/)
+- **MaxToki** (in-silico perturbation, see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb)): Gómez Ortega J, Nadadur RD, Kunitomi A, et al., Theodoris CV.
+  Temporal AI model predicts drivers of cell state trajectories across human aging. *bioRxiv* (2026).
+  [doi:10.64898/2026.03.30.715396](https://www.biorxiv.org/content/10.64898/2026.03.30.715396v1)
+- **Human skeletal-muscle multimodal scRNA/scATAC atlas**: Lai Y, Ramírez-Pardo I, Isern J, et al., Esteban MA.
+  Multimodal cell atlas of the ageing human skeletal muscle. *Nature* 629(8010):154-164 (2024).
+  [doi:10.1038/s41586-024-07348-6](https://doi.org/10.1038/s41586-024-07348-6), [PMC11062927](https://pmc.ncbi.nlm.nih.gov/articles/PMC11062927/)
