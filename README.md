@@ -191,10 +191,10 @@ Absolute paths in `scripts/slurm/` and some notebooks point to our cluster stora
 
 | Manuscript item | Code |
 |---|---|
-| Fig. 1A, F: integration and UMAP | `scripts/1_preproc/integration.ipynb`, `2_single_nuc_inspection/re_cluster.ipynb` |
-| Fig. 1B, C, E: composition, markers | `scripts/2_single_nuc_inspection/snRNA_related.ipynb` |
-| Fig. 1D: transcriptional heterogeneity | `scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
-| Fig. 1G: gene-set activity | `scripts/3_geneset_scores/geneset_activity.ipynb` |
+| Fig. 3A, F: integration and UMAP | `scripts/1_preproc/integration.ipynb`, `2_single_nuc_inspection/re_cluster.ipynb` |
+| Fig. 3B, C, E: composition, markers | `scripts/2_single_nuc_inspection/snRNA_related.ipynb` |
+| Fig. 3D: transcriptional heterogeneity | `scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
+| Fig. 3G: gene-set activity | `scripts/3_geneset_scores/geneset_activity.ipynb` |
 | SLIDE latent factors | `scripts/4_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `4_slide_analysis/LF_viz.ipynb` |
 
 Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. The only public dataset is the human skeletal-muscle ageing atlas (Lai et al., *Nature* 629:154-164, 2024).
