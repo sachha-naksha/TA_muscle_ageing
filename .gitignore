@@ -3,7 +3,7 @@
 
 # Logs and temporary files
 scripts/preproc/lightning_logs
-bash_scripts/*.log
+scripts/slurm/*.log
 scripts/slide_analysis/tutorial_outputs
 scripts/slide_analysis/meta_cell_outputs
 scripts/slide_analysis/figures

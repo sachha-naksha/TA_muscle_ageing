@@ -38,8 +38,8 @@ remaining ones from `pip freeze` / `sessionInfo()`. <!-- TODO: export environmen
 | Stage | Environment | Key packages |
 |---|---|---|
 | Preprocessing, integration, annotation, gene-set scoring (`scripts/1_*` - `3_*`, `6_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
-| Metacells (`bash_scripts/metacell.sbatch`) | Python 3.11 (`metasheller-py311`) | scanpy, metashells |
-| GRN / TF-KO (`scripts/4_grn_tf_enrichment`, `bash_scripts/tf_ko.sbatch`) | `celloracle_env` | CellOracle, scvelo, velocyto, cellrank, palantir, loompy |
+| Metacells (`scripts/slurm/metacell.sbatch`) | Python 3.11 (`metasheller-py311`) | scanpy, metashells |
+| GRN / TF-KO (`scripts/4_grn_tf_enrichment`, `scripts/slurm/tf_ko.sbatch`) | `celloracle_env` | CellOracle, scvelo, velocyto, cellrank, palantir, loompy |
 | **SLIDE, R (primary run, `scripts/5_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
 | Seurat analyses (`.Rmd` in `1_preproc/`, `2_single_nuc_inspection/`, `6_human_skm_multimodal/`) | R | Seurat, harmony, SingleR, SummarizedExperiment, ggplot2, dplyr, patchwork, openxlsx, EnhancedVolcano, MuDataSeurat, reticulate |
 
@@ -134,11 +134,11 @@ Scripts are organised by analysis stage; each numbered folder holds both its Pyt
 TA_muscle_ageing/
 ├── README.md
 ├── LICENSE                                   Apache-2.0
-├── bash_scripts/                             SLURM job scripts
-│   ├── metacell.sbatch                       metacells per sample (metashells)
-│   ├── slide_R_runs.sbatch                   SLIDE (R) cross-validation
-│   └── tf_ko.sbatch                          CellOracle TF knockout array job
 └── scripts/
+    ├── slurm/                                SLURM job scripts
+    │   ├── metacell.sbatch                   metacells per sample (metashells)
+    │   ├── slide_R_runs.sbatch               SLIDE (R) cross-validation
+    │   └── tf_ko.sbatch                      CellOracle TF knockout array job
     ├── pygenelab/                            helper library (Python)
     │   ├── data.py, utils.py, images.py, plotting.py
     │   ├── geneset_activity.py, deg_functional_enrichment.py, llm_categorize.py
@@ -181,7 +181,7 @@ Run the stages in order. Each notebook has a paths cell at the top; edit it for 
 1. **Preprocess and integrate**: `scripts/1_preproc/` (Cell Ranger + CellBender output to a scVI/scANVI-integrated `.h5ad`).
 2. **Annotate and inspect**: `scripts/2_single_nuc_inspection/`.
 3. **Gene-set activity**: `scripts/3_geneset_scores/` (uses `pygenelab.geneset_activity`).
-4. **Metacells and SLIDE input (Python, preprocessing only)**: `bash_scripts/metacell.sbatch`, then `scripts/5_slide_analysis/prep_data_slide.ipynb`
+4. **Metacells and SLIDE input (Python, preprocessing only)**: `scripts/slurm/metacell.sbatch`, then `scripts/5_slide_analysis/prep_data_slide.ipynb`
    writes the `*_X.csv` (metacell x gene) and `*_Y.csv` (labels) files.
 5. **SLIDE (R; all SLIDE runs are done in R)**: edit `scripts/5_slide_analysis/config_optimize_slide.yaml` (`x_path`, `y_path`, `out_path`, `delta`, `lambda`, `spec`, ...), then
    ```r
@@ -191,12 +191,12 @@ Run the stages in order. Each notebook has a paths cell at the top; edit it for 
    SLIDE::optimizeSLIDE(input_params, sink_file = FALSE)   # grid over delta/lambda
    SLIDE::SLIDEcv("<out_path>/yaml_params.yaml", nrep = 2000, k = 20)   # final CV
    ```
-   On SLURM: `sbatch bash_scripts/slide_R_runs.sbatch` (edit the script path first).
+   On SLURM: `sbatch scripts/slurm/slide_R_runs.sbatch` (edit the script path first).
    See the [SLIDE repository](https://github.com/jishnu-lab/SLIDE) for parameter documentation.
-6. **GRN and TF knockout**: `scripts/4_grn_tf_enrichment/` then `sbatch bash_scripts/tf_ko.sbatch`.
+6. **GRN and TF knockout**: `scripts/4_grn_tf_enrichment/` then `sbatch scripts/slurm/tf_ko.sbatch`.
 7. **MaxToki perturbation**: see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
 
-Absolute paths in `bash_scripts/` and some notebooks point to our cluster storage
+Absolute paths in `scripts/slurm/` and some notebooks point to our cluster storage
 (`/ocean/...`, `/ix/...`); replace them with your own.
 
 ### Reproduction instructions (optional)
@@ -208,7 +208,7 @@ Absolute paths in `bash_scripts/` and some notebooks point to our cluster storag
 | Fig. 1D: transcriptional heterogeneity | `scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
 | Fig. 1G: gene-set activity | `scripts/3_geneset_scores/geneset_activity.ipynb` |
 | SLIDE latent factors | `scripts/5_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `5_slide_analysis/LF_viz.ipynb` |
-| TF-KO simulations | `scripts/4_grn_tf_enrichment/4_TF_KO_sim.ipynb`, `bash_scripts/tf_ko.sbatch` |
+| TF-KO simulations | `scripts/4_grn_tf_enrichment/4_TF_KO_sim.ipynb`, `scripts/slurm/tf_ko.sbatch` |
 
 Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. The only public dataset is the human skeletal-muscle ageing atlas (Lai et al., *Nature* 629:154-164, 2024).
 
