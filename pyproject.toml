@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pygenelab"
+version = "0.1.0"
+description = "Helper library for the TA muscle ERCC1 snRNA-seq analysis (plotting, gene-set activity, SLIDE latent-factor visualisation)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "seaborn",
+    "scikit-learn",
+    "scanpy",
+    "anndata>=0.11",
+    "decoupler",
+    "networkx",
+    "pillow",
+]
+
+[project.optional-dependencies]
+# crossprediction.py reads R objects via rpy2; llm_categorize.py calls the Anthropic API
+extras = ["rpy2", "anthropic"]
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+include = ["pygenelab*"]

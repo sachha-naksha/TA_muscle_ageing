@@ -55,17 +55,17 @@ git clone git@github.com:sachha-naksha/TA_muscle_ageing.git
 cd TA_muscle_ageing
 ```
 
-**Python environment (stages 1-3, 6)**
+**Python environment (stages 1-3, 5)**
 
 ```bash
 conda create -n ta_muscle python=3.12 -y
 conda activate ta_muscle
 pip install scanpy anndata scvi-tools==1.4.0 decoupler gseapy statsmodels scikit-learn seaborn plotnine
-pip install -e scripts/pygenelab        # local helper library; needs a pyproject.toml, see TODO
+pip install -e .                          # installs the local helper library `pygenelab` (from scripts/pygenelab)
 ```
 
-<!-- TODO: scripts/pygenelab has no pyproject.toml/setup.py, so `pip install -e` will not work yet.
-     Add one (or document `export PYTHONPATH=$PWD/scripts`). -->
+The notebooks also work without this last step: each one adds this repository's `scripts/` folder to
+`sys.path` automatically when it is run from inside the cloned repo.
 
 **R and SLIDE (required for the latent-factor analysis)**
 
@@ -121,6 +121,7 @@ Scripts are organised by analysis stage; each numbered folder holds both its Pyt
 TA_muscle_ageing/
 ├── README.md
 ├── LICENSE                                   Apache-2.0
+├── pyproject.toml                            makes `pygenelab` pip-installable
 └── scripts/
     ├── slurm/                                SLURM job scripts
     │   ├── metacell.sbatch                   metacells per sample (metashells)

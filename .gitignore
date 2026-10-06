@@ -9,3 +9,5 @@ scripts/slide_analysis/meta_cell_outputs
 scripts/slide_analysis/figures
 scripts/pygenelab/__pycache__/*
 scripts/*/Output/*
+# Packaging
+*.egg-info/
