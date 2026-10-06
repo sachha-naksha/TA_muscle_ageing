@@ -37,8 +37,7 @@ Exact package versions: <!-- TODO: fill from environment export -->
 
 ### Operating systems and tested versions
 
-- Linux (RHEL 9), SLURM cluster. <!-- TODO: confirm OS/kernel versions -->
-- Interactive notebooks also run on macOS (Apple silicon) for the lighter stages. <!-- TODO: confirm; list tested versions -->
+- Tested on RHEL 9.6 (SLURM CPU node, 4 cores, 64 GB RAM) with Python 3.12.14.
 
 ### Non-standard hardware
 
@@ -79,7 +78,7 @@ devtools::install_github("jishnu-lab/SLIDE")   # R >= 4.5.0 was used
 
 **MaxToki perturbation** is run separately on a GPU node, from a pre-built Apptainer `.sif` image; see https://github.com/sachha-naksha/maxtoki-perturb.
 
-Typical install time: under one hour on a SLURM CPU node (Python and R environments, including SLIDE).
+Typical install time on a SLURM CPU node: about 20 minutes for the Python environment, under one hour including R and SLIDE.
 
 ---
 
