@@ -190,7 +190,7 @@ Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.2265131
 
 ## License
 
-<!-- TODO: add a LICENSE file. The journal recommends an OSI-approved license (e.g. MIT, BSD-3, Apache-2.0). -->
+Apache License 2.0; see [LICENSE](LICENSE).
 
 ## Citation
 
