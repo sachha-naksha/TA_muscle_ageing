@@ -4,7 +4,7 @@ Code for the single-nucleus analysis of tibialis anterior (TA) muscle from skele
 ERCC1 knockout (Skm-KO) and Control mice (3 replicates x genotype x sex, 12 samples), processed in
 two batches and integrated, and compared with the public human skeletal-muscle ageing atlas
 (Lai et al., *Nature* 2024). The repository covers preprocessing and
-integration, cell-type annotation, gene-set activity, GRN/TF-knockout simulation, SLIDE latent-factor
+integration, cell-type annotation, gene-set activity, SLIDE latent-factor
 analysis, and cross-species transfer.
 
 
@@ -31,15 +31,13 @@ Pinned versions used for the manuscript:
 
 ### Software dependencies
 
-No single lockfile is shipped yet; the analysis used separate environments per stage (several packages
-conflict, e.g. CellOracle vs. scvi-tools). Versions below are those recorded in the code; fill the
+No single lockfile is shipped yet; the analysis used separate environments per stage. Versions below are those recorded in the code; fill the
 remaining ones from `pip freeze` / `sessionInfo()`. <!-- TODO: export environment files -->
 
 | Stage | Environment | Key packages |
 |---|---|---|
 | Preprocessing, integration, annotation, gene-set scoring (`scripts/1_*` - `3_*`, `6_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
 | Metacells (`scripts/slurm/metacell.sbatch`) | Python 3.11 (`metasheller-py311`) | scanpy, metashells |
-| GRN / TF-KO (`scripts/4_grn_tf_enrichment`, `scripts/slurm/tf_ko.sbatch`) | `celloracle_env` | CellOracle, scvelo, velocyto, cellrank, palantir, loompy |
 | **SLIDE, R (primary run, `scripts/5_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
 | Seurat analyses (`.Rmd` in `1_preproc/`, `2_single_nuc_inspection/`, `6_human_skm_multimodal/`) | R | Seurat, harmony, SingleR, SummarizedExperiment, ggplot2, dplyr, patchwork, openxlsx, EnhancedVolcano, MuDataSeurat, reticulate |
 
@@ -52,7 +50,7 @@ Exact package versions: <!-- TODO: fill from environment export -->
 
 ### Non-standard hardware
 
-- Preprocessing/scVI integration and CellOracle fitting benefit from a GPU / 64+ cores; SLURM scripts request
+- Preprocessing/scVI integration benefits from a GPU / 64+ cores; SLURM scripts request
   64 cores (`RM-shared`) or 64 GB RAM. <!-- TODO: state minimum RAM/GPU for the demo vs. full data -->
 - The demo (section 3) needs no non-standard hardware. <!-- TODO: confirm once the demo dataset exists -->
 
@@ -76,9 +74,6 @@ pip install -e scripts/pygenelab        # local helper library; needs a pyprojec
 
 <!-- TODO: scripts/pygenelab has no pyproject.toml/setup.py, so `pip install -e` will not work yet.
      Add one (or document `export PYTHONPATH=$PWD/scripts`). -->
-
-**GRN / TF-KO environment**: follow the [CellOracle installation guide](https://morris-lab.github.io/CellOracle.documentation/),
-then `pip install scvelo velocyto cellrank palantir`.
 
 **R and SLIDE (required for the latent-factor analysis)**
 
@@ -137,8 +132,7 @@ TA_muscle_ageing/
 └── scripts/
     ├── slurm/                                SLURM job scripts
     │   ├── metacell.sbatch                   metacells per sample (metashells)
-    │   ├── slide_R_runs.sbatch               SLIDE (R) cross-validation
-    │   └── tf_ko.sbatch                      CellOracle TF knockout array job
+    │   └── slide_R_runs.sbatch               SLIDE (R) cross-validation
     ├── pygenelab/                            helper library (Python)
     │   ├── data.py, utils.py, images.py, plotting.py
     │   ├── geneset_activity.py, deg_functional_enrichment.py, llm_categorize.py
@@ -157,11 +151,6 @@ TA_muscle_ageing/
     ├── 3_geneset_scores/                     AUCell gene-set activity, DEG enrichment
     │   ├── geneset_activity.ipynb, DEG_Functional_Enrichment.ipynb
     │   └── msigdb metabolism enriched pathways mice/*.csv
-    ├── 4_grn_tf_enrichment/                  trajectory, CellOracle, LF enrichment, TF-KO
-    │   ├── 0_scanpy_preproc.ipynb, 1_traj_inference.ipynb, 2_cellOracle_fit.ipynb
-    │   ├── 3_LF_enrichment.ipynb, 4_TF_KO_sim.ipynb
-    │   ├── imputation.ipynb, scvelo_ercc1_samples.ipynb, state_lf_enrich.py
-    │   └── utils/grn.py
     ├── 5_slide_analysis/                     SLIDE input prep (Python); SLIDE runs and plots (R)
     │   ├── meta_cell.ipynb, prep_data_slide.ipynb, LF_viz.ipynb
     │   ├── slide_runs.R                                            [R]  SLIDE CV
@@ -193,8 +182,7 @@ Run the stages in order. Each notebook has a paths cell at the top; edit it for 
    ```
    On SLURM: `sbatch scripts/slurm/slide_R_runs.sbatch` (edit the script path first).
    See the [SLIDE repository](https://github.com/jishnu-lab/SLIDE) for parameter documentation.
-6. **GRN and TF knockout**: `scripts/4_grn_tf_enrichment/` then `sbatch scripts/slurm/tf_ko.sbatch`.
-7. **MaxToki perturbation**: see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
+6. **MaxToki perturbation**: see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
 
 Absolute paths in `scripts/slurm/` and some notebooks point to our cluster storage
 (`/ocean/...`, `/ix/...`); replace them with your own.
@@ -208,7 +196,6 @@ Absolute paths in `scripts/slurm/` and some notebooks point to our cluster stora
 | Fig. 1D: transcriptional heterogeneity | `scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
 | Fig. 1G: gene-set activity | `scripts/3_geneset_scores/geneset_activity.ipynb` |
 | SLIDE latent factors | `scripts/5_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `5_slide_analysis/LF_viz.ipynb` |
-| TF-KO simulations | `scripts/4_grn_tf_enrichment/4_TF_KO_sim.ipynb`, `scripts/slurm/tf_ko.sbatch` |
 
 Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. The only public dataset is the human skeletal-muscle ageing atlas (Lai et al., *Nature* 629:154-164, 2024).
 
