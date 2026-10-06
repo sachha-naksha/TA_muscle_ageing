@@ -42,8 +42,11 @@ Exact package versions: <!-- TODO: fill from environment export -->
 
 ### Non-standard hardware
 
-- Preprocessing/scVI integration benefits from a GPU / 64+ cores; SLURM scripts request
-  64 cores (`RM-shared`) or 64 GB RAM. <!-- TODO: state minimum RAM/GPU for the demo vs. full data -->
+- The analysis in this repository runs on CPU. The SLURM scripts request 64 cores (`RM-shared`) or 64 GB RAM.
+  <!-- TODO: state minimum RAM for the demo vs. full data -->
+- **MaxToki perturbation requires an NVIDIA GPU** (CUDA, x86). We provide a pre-built Apptainer image (`.sif`)
+  with the compiled code for running on SLURM; see [maxtoki-perturb](https://github.com/sachha-naksha/maxtoki-perturb).
+  <!-- TODO: add .sif download link / DOI -->
 - The demo (section 3) needs no non-standard hardware. <!-- TODO: confirm once the demo dataset exists -->
 
 ---
@@ -74,9 +77,9 @@ install.packages(c("devtools", "yaml"))
 devtools::install_github("jishnu-lab/SLIDE")   # R >= 4.5.0 was used
 ```
 
-**MaxToki perturbation** is installed separately; see https://github.com/sachha-naksha/maxtoki-perturb.
+**MaxToki perturbation** is run separately on a GPU node, from a pre-built Apptainer `.sif` image; see https://github.com/sachha-naksha/maxtoki-perturb.
 
-Typical install time on a normal desktop computer: <!-- TODO: measure, e.g. "~X min for Python env, ~Y min for SLIDE" -->
+Typical install time: under one hour on a SLURM CPU node (Python and R environments, including SLIDE).
 
 ---
 
