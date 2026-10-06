@@ -15,7 +15,7 @@ This analysis spans three code bases. All three are needed to reproduce the full
 | Component | Language | Where | Used for |
 |---|---|---|---|
 | This repository | Python, R, bash | https://github.com/sachha-naksha/TA_muscle_ageing | Everything except the two items below |
-| SLIDE | **R** | https://github.com/jishnu-lab/SLIDE | Latent-factor discovery and cross-validation (`scripts/5_slide_analysis/slide_runs.R`) |
+| SLIDE | **R** | https://github.com/jishnu-lab/SLIDE | Latent-factor discovery and cross-validation (`scripts/4_slide_analysis/slide_runs.R`) |
 | maxtoki-perturb | Python | https://github.com/sachha-naksha/maxtoki-perturb | MaxToki in-silico gene perturbation (not run from this repo) |
 
 Pinned versions used for the manuscript:
@@ -38,8 +38,8 @@ remaining ones from `pip freeze` / `sessionInfo()`. <!-- TODO: export environmen
 |---|---|---|
 | Preprocessing, integration, annotation, gene-set scoring (`scripts/1_*` - `3_*`, `6_*`) | Python 3.12 | scanpy, anndata, scvi-tools 1.4.0, torch, scrublet, decoupler, gseapy, statsmodels, scikit-learn, seaborn, plotnine, `pygenelab` (local, see below) |
 | Metacells (`scripts/slurm/metacell.sbatch`) | Python 3.11 (`metasheller-py311`) | scanpy, metashells |
-| **SLIDE, R (primary run, `scripts/5_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
-| Seurat analyses (`.Rmd` in `1_preproc/`, `2_single_nuc_inspection/`, `6_human_skm_multimodal/`) | R | Seurat, harmony, SingleR, SummarizedExperiment, ggplot2, dplyr, patchwork, openxlsx, EnhancedVolcano, MuDataSeurat, reticulate |
+| **SLIDE, R (primary run, `scripts/4_slide_analysis/slide_runs.R`)** | **R 4.5.0** | SLIDE (GitHub: `jishnu-lab/SLIDE`), devtools, yaml |
+| Seurat analyses (`.Rmd` in `1_preproc/`, `2_single_nuc_inspection/`, `5_human_skm_multimodal/`) | R | Seurat, harmony, SingleR, SummarizedExperiment, ggplot2, dplyr, patchwork, openxlsx, EnhancedVolcano, MuDataSeurat, reticulate |
 
 Exact package versions: <!-- TODO: fill from environment export -->
 
@@ -110,7 +110,7 @@ md5sum human_female_adata.h5ad    # macOS: md5 human_female_adata.h5ad
 ### Run the demo
 
 The human female type II subset is the recommended demo (smaller, single sex). Notebooks to run on it:
-`scripts/6_human_skm_multimodal/transfer_learning.ipynb` and `activity_score_trends.ipynb`.
+`scripts/5_human_skm_multimodal/transfer_learning.ipynb` and `activity_score_trends.ipynb`.
 <!-- TODO: confirm which notebooks/paths read human_female_adata.h5ad, and point their input cell at data/ -->
 
 - **Expected output:** <!-- TODO: list figures/tables produced, with filenames -->
@@ -151,13 +151,13 @@ TA_muscle_ageing/
     ├── 3_geneset_scores/                     AUCell gene-set activity, DEG enrichment
     │   ├── geneset_activity.ipynb, DEG_Functional_Enrichment.ipynb
     │   └── msigdb metabolism enriched pathways mice/*.csv
-    ├── 5_slide_analysis/                     SLIDE input prep (Python); SLIDE runs and plots (R)
+    ├── 4_slide_analysis/                     SLIDE input prep (Python); SLIDE runs and plots (R)
     │   ├── meta_cell.ipynb, prep_data_slide.ipynb, LF_viz.ipynb
     │   ├── slide_runs.R                                            [R]  SLIDE CV
     │   ├── config_optimize_slide.yaml                              SLIDE parameters
     │   ├── slideCV_boxplot.Rmd                                     [R]
     │   └── slideLF_plot.Rmd                                        [R]
-    ├── 6_human_skm_multimodal/               transfer to human skeletal muscle
+    ├── 5_human_skm_multimodal/               transfer to human skeletal muscle
     │   ├── rds_to_adata.Rmd                                        [R]
     │   ├── transfer_learning.ipynb, activity_score_trends.ipynb
     └── _archive/                             scratch, not used for results
@@ -170,12 +170,12 @@ Run the stages in order. Each notebook has a paths cell at the top; edit it for 
 1. **Preprocess and integrate**: `scripts/1_preproc/` (Cell Ranger + CellBender output to a scVI/scANVI-integrated `.h5ad`).
 2. **Annotate and inspect**: `scripts/2_single_nuc_inspection/`.
 3. **Gene-set activity**: `scripts/3_geneset_scores/` (uses `pygenelab.geneset_activity`).
-4. **Metacells and SLIDE input (Python, preprocessing only)**: `scripts/slurm/metacell.sbatch`, then `scripts/5_slide_analysis/prep_data_slide.ipynb`
+4. **Metacells and SLIDE input (Python, preprocessing only)**: `scripts/slurm/metacell.sbatch`, then `scripts/4_slide_analysis/prep_data_slide.ipynb`
    writes the `*_X.csv` (metacell x gene) and `*_Y.csv` (labels) files.
-5. **SLIDE (R; all SLIDE runs are done in R)**: edit `scripts/5_slide_analysis/config_optimize_slide.yaml` (`x_path`, `y_path`, `out_path`, `delta`, `lambda`, `spec`, ...), then
+5. **SLIDE (R; all SLIDE runs are done in R)**: edit `scripts/4_slide_analysis/config_optimize_slide.yaml` (`x_path`, `y_path`, `out_path`, `delta`, `lambda`, `spec`, ...), then
    ```r
    library(SLIDE)
-   input_params <- yaml::yaml.load_file("scripts/5_slide_analysis/config_optimize_slide.yaml")
+   input_params <- yaml::yaml.load_file("scripts/4_slide_analysis/config_optimize_slide.yaml")
    SLIDE::checkDataParams(input_params)
    SLIDE::optimizeSLIDE(input_params, sink_file = FALSE)   # grid over delta/lambda
    SLIDE::SLIDEcv("<out_path>/yaml_params.yaml", nrep = 2000, k = 20)   # final CV
@@ -195,7 +195,7 @@ Absolute paths in `scripts/slurm/` and some notebooks point to our cluster stora
 | Fig. 1B, C, E: composition, markers | `scripts/2_single_nuc_inspection/snRNA_related.ipynb` |
 | Fig. 1D: transcriptional heterogeneity | `scripts/2_single_nuc_inspection/Transcriptional_Heterogeneity.ipynb`, `pygenelab/transcriptional_noise.py` |
 | Fig. 1G: gene-set activity | `scripts/3_geneset_scores/geneset_activity.ipynb` |
-| SLIDE latent factors | `scripts/5_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `5_slide_analysis/LF_viz.ipynb` |
+| SLIDE latent factors | `scripts/4_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `4_slide_analysis/LF_viz.ipynb` |
 
 Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. The only public dataset is the human skeletal-muscle ageing atlas (Lai et al., *Nature* 629:154-164, 2024).
 
