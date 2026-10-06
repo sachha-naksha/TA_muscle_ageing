@@ -26,16 +26,3 @@ def map_ensembl_to_gene_name(adata, gtf_file_path):
     new_var_names = pd.Index([mapping_dict.get(name, name) for name in adata.var_names])
     adata.var_names = new_var_names
     return adata
-
-# if __name__ == "__main__":
-#     # load the anndata object for mice hindlimb
-#     adata = sc.read_h5ad("/ocean/projects/cis240075p/asachan/datasets/TA_muscle/human_SKM_ageing_atlas_2024/mice_hindlimb.h5ad")
-#     # subset the anndata to have only cell types of myofibers
-#     myofiber_adata = adata[adata.obs["cell_type"].isin(["skeletal muscle satellite stem cell", "type II muscle cell", "type IIa muscle cell", "type IIb muscle cell", "type I muscle cell"])]
-#     print(myofiber_adata.var_names)
-#     myofiber_adata = map_ensembl_to_gene_name(myofiber_adata, "/ocean/projects/cis240075p/asachan/datasets/mouse_genome_files/refdata-gex-mm10-2020-A/genes/genes.gtf")
-#     print(myofiber_adata.var_names)
-
-
-
-

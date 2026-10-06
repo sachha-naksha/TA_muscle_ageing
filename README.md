@@ -2,7 +2,8 @@
 
 Code for the single-nucleus analysis of tibialis anterior (TA) muscle from skeletal-muscle-specific
 ERCC1 knockout (Skm-KO) and Control mice (3 replicates x genotype x sex, 12 samples), integrated with
-public young/old mouse and human skeletal-muscle atlases. The repository covers preprocessing and
+an in-house young/old mouse aging-reference cohort, and compared with the public human skeletal-muscle
+ageing atlas (Lai et al., *Nature* 2024). The repository covers preprocessing and
 integration, cell-type annotation, gene-set activity, GRN/TF-knockout simulation, SLIDE latent-factor
 analysis, and cross-species transfer.
 
@@ -149,7 +150,7 @@ TA_muscle_ageing/
     │   └── LF_viz.py, crossprediction.py
     ├── 1_preproc/                            QC, doublets, scVI/scANVI integration
     │   ├── ref_preproc.ipynb, query_preproc.ipynb, integration.ipynb
-    │   ├── SKM_mice_hindlimb.ipynb, SKM_human_intercostal.ipynb
+    │   ├── SKM_human_intercostal.ipynb
     │   ├── process_scRNA_QC_embed_seurat.Rmd                       [R]
     │   └── utils/public_atlas.py
     ├── 2_single_nuc_inspection/              annotation, composition, DEGs, heterogeneity
@@ -213,7 +214,7 @@ Absolute paths in `bash_scripts/` and some notebooks point to our cluster storag
 | SLIDE latent factors | `py_scripts/5_slide_analysis/slide_runs.R`, `slideCV_boxplot.Rmd`, `slideLF_plot.Rmd`, `5_slide_analysis/LF_viz.ipynb` |
 | TF-KO simulations | `py_scripts/4_grn_tf_enrichment/4_TF_KO_sim.ipynb`, `bash_scripts/tf_ko.sbatch` |
 
-Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. Public atlases used are listed in `py_scripts/1_preproc/`.
+Processed data: [10.5281/zenodo.22651313](https://doi.org/10.5281/zenodo.22651313). Raw sequencing data: <!-- TODO: GEO accession -->. The only public dataset is the human skeletal-muscle ageing atlas (Lai et al., *Nature* 629:154-164, 2024).
 
 ---
 
